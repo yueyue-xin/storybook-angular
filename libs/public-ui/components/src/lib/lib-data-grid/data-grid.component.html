@@ -1,0 +1,67 @@
+<div class="data-grid-container">
+  <div class="data-grid-header">
+    <button type="button" class="btn btn-primary" (click)="openAddModal()">
+      <clr-icon shape="plus"></clr-icon>
+      Add Item
+    </button>
+  </div>
+
+  <clr-datagrid>
+  <clr-dg-column>ID</clr-dg-column>
+  <clr-dg-column>Name</clr-dg-column>
+  <clr-dg-column>Email</clr-dg-column>
+  <clr-dg-column>Role</clr-dg-column>
+  <clr-dg-column>Status</clr-dg-column>
+
+  <clr-dg-row *ngFor="let user of users">
+    <clr-dg-cell>{{ user.id }}</clr-dg-cell>
+    <clr-dg-cell>{{ user.name }}</clr-dg-cell>
+    <clr-dg-cell>{{ user.email }}</clr-dg-cell>
+    <clr-dg-cell>{{ user.role }}</clr-dg-cell>
+    <clr-dg-cell>
+      <span class="label" [class.label-success]="user.status === 'Online'" [class.label-warning]="user.status === 'Offline'">
+        {{ user.status }}
+      </span>
+    </clr-dg-cell>
+  </clr-dg-row>
+
+  <clr-dg-footer>
+    <clr-dg-pagination #pagination>
+      <clr-dg-page-size [clrPageSizeOptions]="[10, 20, 50, 100]">Users per page</clr-dg-page-size>
+      {{pagination.firstItem + 1}} - {{pagination.lastItem + 1}} of {{pagination.totalItems}} users
+    </clr-dg-pagination>
+  </clr-dg-footer>
+</clr-datagrid>
+
+<lib-modal 
+  [isOpen]="isModalOpen"
+  title="Add New User"
+  primaryButtonText="Add"
+  secondaryButtonText="Cancel"
+  (primaryClick)="onModalPrimaryClick($event)"
+  (secondaryClick)="onModalSecondaryClick($event)">
+  
+  <form [formGroup]="addUserForm" clrForm>
+    <clr-input-container>
+      <label>Name</label>
+      <input clrInput formControlName="name" placeholder="Enter user name" />
+      <clr-control-error>Name is required</clr-control-error>
+    </clr-input-container>
+
+    <clr-input-container>
+      <label>Email</label>
+      <input clrInput formControlName="email" type="email" placeholder="Enter email address" />
+      <clr-control-error>Please enter a valid email</clr-control-error>
+    </clr-input-container>
+
+    <clr-select-container>
+      <label>Role</label>
+      <select clrSelect formControlName="role">
+        <option value="User">User</option>
+        <option value="Admin">Admin</option>
+        <option value="Customer">Customer</option>
+      </select>
+    </clr-select-container>
+  </form>
+</lib-modal>
+</div>

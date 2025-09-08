@@ -1,0 +1,53 @@
+{
+  "name": "public-ui-components",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/public-ui/components/src",
+  "prefix": "lib",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "test": {
+      "executor": "@nx/jest:jest",
+      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+      "options": {
+        "jestConfig": "libs/public-ui/components/jest.config.ts",
+        "tsConfig": "libs/public-ui/components/tsconfig.spec.json"
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    },
+    "storybook": {
+      "executor": "@storybook/angular:start-storybook",
+      "options": {
+        "port": 4400,
+        "tsConfig": "libs/public-ui/components/.storybook/tsconfig.json",
+        "configDir": "libs/public-ui/components/.storybook",
+        "browserTarget": "storybook-project:build",
+        "compodoc": false,
+        "styles": ["libs/public-ui/components/.storybook/styles.scss"]
+      },
+      "configurations": {
+        "ci": {
+          "quiet": true
+        }
+      }
+    },
+    "build-storybook": {
+      "executor": "@storybook/angular:build-storybook",
+      "options": {
+        "tsConfig": "libs/public-ui/components/.storybook/tsconfig.json",
+        "configDir": "libs/public-ui/components/.storybook",
+        "browserTarget": "storybook-project:build",
+        "compodoc": false,
+        "styles": ["libs/public-ui/components/.storybook/styles.scss"],
+        "outputDir": "dist/storybook/public-ui-components"
+      },
+      "configurations": {
+        "ci": {
+          "quiet": true
+        }
+      }
+    }
+  }
+}

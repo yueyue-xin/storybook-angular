@@ -1,0 +1,61 @@
+.complex-datagrid-container {
+  padding: 20px;
+
+  h2 {
+    margin-bottom: 1.5rem;
+    color: #313131;
+  }
+
+  .loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 0;
+    text-align: center;
+
+    .loading-text {
+      margin-top: 1rem;
+      color: #666;
+      font-size: 1.1rem;
+    }
+  }
+
+  .badge {
+    margin-right: 0.5rem;
+    margin-bottom: 0.25rem;
+    display: inline-block;
+  }
+
+  .model-detail {
+    padding: 1rem;
+    background-color: #f9f9f9;
+    border-left: 3px solid #0079ad;
+
+    h4 {
+      margin-top: 0;
+      margin-bottom: 1rem;
+      color: #0079ad;
+    }
+
+    .detail-row {
+      margin-bottom: 1rem;
+      
+      strong {
+        font-weight: 600;
+        color: #313131;
+        display: inline-block;
+        min-width: 150px;
+      }
+    }
+
+    .recommendations {
+      margin-top: 0.5rem;
+      
+      .badge {
+        margin-right: 0.5rem;
+        margin-bottom: 0.25rem;
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+<div class="complex-datagrid-container">
+  <h2>Complex Model Data Grid</h2>
+
+  <!-- Loading Spinner -->
+  <div *ngIf="isLoading" class="loading-container">
+    <clr-spinner clrMedium>Loading model data...</clr-spinner>
+    <p class="loading-text">Loading model data, please wait...</p>
+  </div>
+
+  <!-- Data Grid -->
+  <clr-datagrid *ngIf="!isLoading" [(clrDgSelected)]="selectedModels">
+    <clr-dg-column [clrDgField]="'name'">
+      <ng-container *clrDgHideableColumn>Name</ng-container>
+    </clr-dg-column>
+    <clr-dg-column [clrDgSortBy]="defaultContextComparator">
+      <ng-container *clrDgHideableColumn>Default Context</ng-container>
+    </clr-dg-column>
+    <clr-dg-column [clrDgSortBy]="maxModeComparator">
+      <ng-container *clrDgHideableColumn>Max Mode</ng-container>
+    </clr-dg-column>
+    <clr-dg-column>
+      <ng-container *clrDgHideableColumn>Recommendations</ng-container>
+    </clr-dg-column>
+
+    <clr-dg-row *clrDgItems="let model of filteredData" [clrDgItem]="model">
+      <clr-dg-cell>{{ model.name }}</clr-dg-cell>
+      <clr-dg-cell>{{ model.defaultContext }}</clr-dg-cell>
+      <clr-dg-cell>{{ model.maxMode }}</clr-dg-cell>
+      <clr-dg-cell>
+        <span *ngFor="let rec of model.recommendation" class="badge badge-info">
+          {{ rec }}
+        </span>
+      </clr-dg-cell>
+    </clr-dg-row>
+
+    <clr-dg-detail *clrIfDetail="let model">
+      <div class="model-detail">
+        <h4>{{ model.name }}</h4>
+        <div class="detail-row">
+          <strong>Default Context:</strong> {{ model.defaultContext }}
+        </div>
+        <div class="detail-row">
+          <strong>Max Mode:</strong> {{ model.maxMode }}
+        </div>
+        <div class="detail-row">
+          <strong>Recommendations:</strong>
+          <div class="recommendations">
+            <span *ngFor="let rec of model.recommendation" class="badge badge-success">
+              {{ rec }}
+            </span>
+          </div>
+        </div>
+      </div>
+  </clr-dg-detail>
+
+    <clr-dg-footer>
+      <clr-dg-pagination #pagination [clrDgPageSize]="pageSize">
+        <clr-dg-page-size [clrPageSizeOptions]="[5, 10, 20, 50]">Models per page</clr-dg-page-size>
+        {{ pagination.firstItem + 1 }} - {{ pagination.lastItem + 1 }} of {{ pagination.totalItems }} models
+      </clr-dg-pagination>
+    </clr-dg-footer>
+  </clr-datagrid>
+</div>
