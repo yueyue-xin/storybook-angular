@@ -1,0 +1,9 @@
+clr-modal .modal-footer {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  padding: 20px;
+  background: rgb(255, 245.7, 217.8);
+  border-top: 3px solid hsl(45, 120%, 51.3725490196%);
+}

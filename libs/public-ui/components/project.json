@@ -14,11 +14,23 @@
         "tsConfig": "libs/public-ui/components/tsconfig.spec.json"
       }
     },
+    "compile-scss": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "sass src/app/styles/provisioning-ui.scss libs/public-ui/components/.storybook/assets/page-css-list/provisioning-ui.css --no-source-map",
+          "sass src/app/styles/cloud-auto.scss libs/public-ui/components/.storybook/assets/page-css-list/cloud-auto.css --no-source-map",
+          "sass src/app/styles/relocation.scss libs/public-ui/components/.storybook/assets/page-css-list/relocation.css --no-source-map"
+        ],
+        "parallel": true
+      }
+    },
     "lint": {
       "executor": "@nx/eslint:lint"
     },
     "storybook": {
       "executor": "@storybook/angular:start-storybook",
+      "dependsOn": ["compile-scss"],
       "options": {
         "port": 4400,
         "tsConfig": "libs/public-ui/components/.storybook/tsconfig.json",
@@ -35,6 +47,7 @@
     },
     "build-storybook": {
       "executor": "@storybook/angular:build-storybook",
+      "dependsOn": ["compile-scss"],
       "options": {
         "tsConfig": "libs/public-ui/components/.storybook/tsconfig.json",
         "configDir": "libs/public-ui/components/.storybook",
@@ -48,6 +61,9 @@
           "quiet": true
         }
       }
+    },
+    "chromatic": {
+      "command": "NODE_TLS_REJECT_UNAUTHORIZED=0 npx chromatic --config-file=libs/public-ui/components/chromatic.config.json --project-token=chpt_93cded7e31e3300"
     }
   }
 }

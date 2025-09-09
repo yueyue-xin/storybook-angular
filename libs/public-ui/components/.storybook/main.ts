@@ -20,6 +20,9 @@ const config: StorybookConfig = {
   core: {
     builder: '@storybook/builder-webpack5',
   },
+  staticDirs: [
+    { from: './assets/page-css-list', to: '/page-css-list' },
+  ],
 };
 
 export default config;

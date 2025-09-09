@@ -1,0 +1,16 @@
+@use 'sass:math';
+
+$accent-color: #28a745;
+$background-color: #e8f5e8;
+$grid-gap: 12px;
+
+clr-modal {
+  .modal-footer {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-gap: $grid-gap;
+    padding: math.div($grid-gap, 0.75);
+    background: radial-gradient(circle, $background-color, #f8fff8);
+    border-top: 1px dashed $accent-color;
+  }
+}

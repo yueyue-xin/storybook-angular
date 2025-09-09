@@ -1,0 +1,17 @@
+@use 'sass:color';
+
+$warning-color: #ffc107;
+$text-color: #343a40;
+$padding-base: 20px;
+
+clr-modal {
+  .modal-footer {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    padding: $padding-base;
+    background: color.mix($warning-color, white, 15%);
+    border-top: 3px solid color.adjust($warning-color, $saturation: 20%);
+  }
+}

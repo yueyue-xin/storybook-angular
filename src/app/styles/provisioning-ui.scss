@@ -1,0 +1,16 @@
+@use 'sass:color';
+
+$primary-color: #007cbb;
+$secondary-color: #f0f8ff;
+$spacing-unit: 16px;
+
+clr-modal {
+  .modal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: $spacing-unit;
+    background: linear-gradient(135deg, $secondary-color, white);
+    border-top: 2px solid color.adjust($primary-color, $alpha: -0.8);
+  }
+}

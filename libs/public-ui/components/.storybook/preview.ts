@@ -44,27 +44,19 @@ const preview: Preview = {
       // const translocoService = mockTranslocoService;
       // translocoService.setActiveLang(context.globals['language']);
 
-      // const spacing = context.globals['layoutSpacing'];
+      const spacing = context.globals['layoutSpacing'];
       // const config = styleConfig[spacing as string];
 
-      // if (!linkEl) {
-      //   linkEl = document.createElement('link');
-      //   linkEl.rel = 'stylesheet';
-      //   linkEl.id = 'dynamic-layout-style';
-      //   document.head.appendChild(linkEl);
-      // }
+      if (!linkEl) {
+        linkEl = document.createElement('link');
+        linkEl.rel = 'stylesheet';
+        linkEl.id = 'dynamic-layout-style';
+        document.head.appendChild(linkEl);
+      }
 
-      // switch (spacing) {
-      //   case 'small':
-      //     linkEl.href = '/page-styles/small.css';
-      //     break;
-      //   case 'normal':
-      //     linkEl.href = '/page-styles/page-styles.css';
-      //     break;
-      //   case 'large':
-      //     linkEl.href = '/page-styles/large.css';
-      //     break;
-      // }
+      if(['provisioning-ui', 'cloud-auto', 'relocation'].includes(spacing)) {
+        linkEl.href = `/page-css-list/${spacing}.css`;
+      }
 
       return storyFn();
     },
@@ -100,7 +92,6 @@ const preview: Preview = {
           { value: 'en', title: 'English' },
           { value: 'fr', title: 'Français' },
           { value: 'es', title: 'Español' },
-          { value: 'ja', title: '日本語' },
         ],
         showName: true,
         dynamicTitle: true,
@@ -128,9 +119,9 @@ const preview: Preview = {
       toolbar: {
         icon: 'component',
         items: [
-          { value: 'small', title: 'Provisioning UI', right: 'Components as they appear in provisioning UI' },
-          { value: 'normal', title: 'Cloud Automation UI', right: 'Main application' },
-          { value: 'large', title: 'Relocation UI', right: 'Components in relocation UI' },
+          { value: 'provisioning-ui', title: 'Provisioning UI', right: 'Components as they appear in provisioning UI' },
+          { value: 'cloud-auto', title: 'Cloud Automation UI', right: 'Main application' },
+          { value: 'relocation', title: 'Relocation UI', right: 'Components in relocation UI' },
         ],
         showName: true,
         dynamicTitle: true,

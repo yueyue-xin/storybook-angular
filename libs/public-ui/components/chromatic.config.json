@@ -1,0 +1,8 @@
+{
+  "projectId": "Project:chpt_93cded7e31e3300",
+  "autoAcceptChanges": "main",
+  "buildScriptName": "build-storybook",
+  "outputDir": "dist/storybook/public-ui/components",
+  "exitOnceUploaded": true,
+  "onlyChanged": true
+}
