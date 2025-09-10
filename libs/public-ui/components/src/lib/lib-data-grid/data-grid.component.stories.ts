@@ -53,6 +53,6 @@ export const WithCustomData: Story = {
     },
   }),
   parameters: {
-    themes: 'dark'
+    theme: 'dark'
   }
 };
