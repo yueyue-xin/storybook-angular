@@ -25,4 +25,4 @@ jobs:
       - name: Publish to Chromatic
         env:
           CHROMATIC_PROJECT_TOKEN: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
-        run: nx chromatic public-ui-components
+        run: npx nx chromatic public-ui-components
