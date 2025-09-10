@@ -1,5 +1,6 @@
 {
-  "projectId": "Project:chpt_93cded7e31e3300",
+  "$schema": "https://www.chromatic.com/config-file.schema.json",
+  "projectId": "Project:68bfbde9b26c8a6fdc3a6f85",
   "autoAcceptChanges": "main",
   "buildScriptName": "build-storybook",
   "outputDir": "dist/storybook/public-ui/components",
