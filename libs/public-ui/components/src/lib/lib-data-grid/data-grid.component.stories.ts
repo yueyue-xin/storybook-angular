@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/angular';
 import { DataGridComponent } from './data-grid.component';
+import { themes } from '@storybook/theming';
 
 const meta: Meta<DataGridComponent> = {
   title: 'Public UI/DataGrid',
@@ -51,4 +52,7 @@ export const WithCustomData: Story = {
       ]
     },
   }),
+  parameters: {
+    theme: 'dark'
+  }
 };
