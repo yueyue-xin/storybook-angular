@@ -63,7 +63,15 @@
       }
     },
     "chromatic": {
-      "command": "NODE_TLS_REJECT_UNAUTHORIZED=0 npx chromatic --config-file=libs/public-ui/components/chromatic.config.json --project-token=chpt_93cded7e31e3300"
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "NODE_TLS_REJECT_UNAUTHORIZED=0 npx chromatic --config-file=libs/public-ui/components/chromatic.config.json --project-token=$CHROMATIC_PROJECT_TOKEN"
+      },
+      "configurations": {
+        "ci": {
+          "quiet": true
+        }
+      }
     }
   }
 }
