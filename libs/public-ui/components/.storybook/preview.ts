@@ -31,8 +31,8 @@ const preview: Preview = {
     }),
     (storyFn, context) => {
       // const themeService = mockVmwClarityThemeService;
-      const theme = context.globals['theme'];
-      // console.log(context);
+      const theme = context.parameters['theme'] ?? context.globals['theme'];
+      console.log(context);
       // themeService.setTheme(theme);
 
       // const channel = addons.getChannel();
@@ -44,7 +44,7 @@ const preview: Preview = {
       // const translocoService = mockTranslocoService;
       // translocoService.setActiveLang(context.globals['language']);
 
-      const spacing = context.globals['layoutSpacing'];
+      const spacing = context.parameters['layoutSpacing'] ?? context.globals['layoutSpacing'];
       // const config = styleConfig[spacing as string];
 
       if (!linkEl) {
@@ -66,6 +66,10 @@ const preview: Preview = {
     tags: ['autodocs'],
     docs: {
       theme: themes.light,
+    },
+    demo: {
+      demoProperty: 'b',
+      anotherDemoProperty: 'b',
     },
   },
 

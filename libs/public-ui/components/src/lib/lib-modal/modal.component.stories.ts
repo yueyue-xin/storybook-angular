@@ -145,3 +145,10 @@ export const WithForm: Story = {
     `,
   }),
 };
+
+export const CloudAutoMationPage: Story = {
+  ...Default,
+  parameters: {
+    layoutSpacing: 'cloud-auto'
+  },
+}
