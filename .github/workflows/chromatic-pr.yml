@@ -24,9 +24,6 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Build Storybook
-        run: npx nx build-storybook public-ui-components
-
       - name: Publish Storybook to Chromatic
         uses: chromaui/action@latest
         with:
