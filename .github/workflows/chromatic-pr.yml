@@ -29,4 +29,3 @@ jobs:
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           configFile: libs/public-ui/components/chromatic.config.json
-          quiet: true
