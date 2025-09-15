@@ -13,7 +13,7 @@ import { DataGridComponent } from '@public-ui/components';
   `,
   styles: [`
     .content-container {
-      padding: 20px;
+      padding: 30px;
     }
   `]
 })
