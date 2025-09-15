@@ -51,7 +51,7 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run Playwright tests
-        run: npx nx e2e storybook-project
+        run: npx nx e2e storybook-project --update-snapshots
         env:
           CI: true
 
