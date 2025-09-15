@@ -1,7 +1,9 @@
+import playwright from 'eslint-plugin-playwright';
 import baseConfig from './eslint.base.config.mjs';
 import nx from '@nx/eslint-plugin';
 
 export default [
+  playwright.configs['flat/recommended'],
   ...baseConfig,
   {
     ignores: ['**/dist'],
@@ -45,6 +47,11 @@ export default [
   },
   {
     files: ['**/*.html'],
+    // Override or add rules here
+    rules: {},
+  },
+  {
+    files: ['**/*.ts', '**/*.js'],
     // Override or add rules here
     rules: {},
   },

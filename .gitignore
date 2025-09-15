@@ -47,3 +47,14 @@ Thumbs.db
 
 
 storybook-static
+
+# Playwright
+playwright-report/
+test-results/
+**/test-results/
+**/playwright-report/
+
+# Build and log files
+*.log
+build-storybook.log
+chromatic.log
