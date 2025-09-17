@@ -29,7 +29,11 @@ jobs:
 
       - name: Run Playwright tests
         run: |
-          npx nx e2e storybook-project
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            npx nx e2e storybook-project
+          else
+            npx nx e2e storybook-project -- --update-snapshots
+          fi
 
       - name: Upload snapshots to Chromatic
         run: |
