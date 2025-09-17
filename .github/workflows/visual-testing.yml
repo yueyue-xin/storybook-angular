@@ -27,7 +27,7 @@ jobs:
       
 
       - name: Run Playwright tests
-        run: npx nx e2e storybook-project -- --update-snapshots
+        run: npx nx e2e storybook-project -- --update-snapshots --output ./test-results
         env:
           HOME: /root
             
@@ -35,7 +35,7 @@ jobs:
         if: always()
         with:
           name: test-results
-          path: ./test-results
+          path: dist/.playwright/test-output
           retention-days: 30
 
   chromatic:
@@ -55,11 +55,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: test-results
-          path: ./test-results
+          path: dist/.playwright/test-output
       - name: Run Chromatic
         uses: chromaui/action@latest
         with:
           playwright: true
           projectToken: ${{ secrets.CHROMATIC_PLAYWRIGHT_PROJECT_TOKEN }}
         env: 
-          CHROMATIC_ARCHIVE_LOCATION: ./test-results
+          CHROMATIC_ARCHIVE_LOCATION: dist/.playwright/test-output
