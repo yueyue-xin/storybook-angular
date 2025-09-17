@@ -10,9 +10,7 @@
     "build-storybook": "nx build-storybook public-ui-components",
     "e2e": "nx e2e storybook-project",
     "e2e:ui": "nx e2e storybook-project --ui",
-    "e2e:debug": "nx e2e storybook-project --debug",
-    "chromatic": "nx chromatic public-ui-components",
-    "test:visual": "npm run e2e && npm run chromatic"
+    "e2e:debug": "nx e2e storybook-project --debug"
   },
   "private": true,
   "dependencies": {
@@ -39,6 +37,7 @@
     "@angular/cli": "~19.0.0",
     "@angular/compiler-cli": "~19.0.0",
     "@angular/language-service": "~19.0.0",
+    "@chromatic-com/playwright": "^0.12.7",
     "@chromatic-com/storybook": "^3.2.7",
     "@eslint/js": "^9.8.0",
     "@nx/angular": "21.4.1",

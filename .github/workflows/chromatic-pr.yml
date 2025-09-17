@@ -1,4 +1,4 @@
-name: "Chromatic PR Checks"
+name: "Chromatic&Storybook Visual Testing"
 
 on:
   pull_request:

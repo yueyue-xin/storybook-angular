@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '@chromatic-com/playwright';
 
 test.describe('Visual Regression Tests', () => {
   test('should match hello page visual snapshot', async ({ page }) => {
