@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '@chromatic-com/playwright';
 
 test.describe('Data Grid Component Tests', () => {
   test('should render basic data grid on hello page', async ({ page }) => {
