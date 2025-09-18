@@ -30,6 +30,9 @@ jobs:
         run: npx nx e2e storybook-project -- --update-snapshots --output ./test-results
         env:
           HOME: /root
+
+      - name: Debug Chromatic archive location
+        run: ls -R dist/.playwright/test-output
             
       - uses: actions/upload-artifact@v4
         if: always()
