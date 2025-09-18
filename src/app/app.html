@@ -1,2 +1,27 @@
-<h3>Add a new Title...</h3>
-<router-outlet></router-outlet>
+<!-- <h2>Update a new Title...</h2> -->
+<div class="main-container">
+  <header class="header-6">
+    <div class="branding">
+      <a href="javascript://">
+        <cds-icon shape="vm-bug" />
+        <span class="title">Demo Project</span>
+      </a>
+    </div>
+    <div class="settings">
+      <a href="javascript://" class="nav-link nav-icon">
+        <cds-icon shape="cog" />
+      </a>
+    </div>
+  </header>
+  <nav class="subnav">
+    <ul class="nav">
+      <li class="nav-item">
+        <a class="nav-link" routerLink="/hello" routerLinkActive="active">Basic Grid</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" routerLink="/new-data" routerLinkActive="active">Complex Grid</a>
+      </li>
+    </ul>
+  </nav>
+  <router-outlet></router-outlet>
+</div>

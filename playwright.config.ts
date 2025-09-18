@@ -17,6 +17,8 @@ const baseURL = process.env['BASE_URL'] || 'http://localhost:4200';
 export default defineConfig({
   ...nxE2EPreset(__filename, { testDir: './apps/storybook-project-e2e' }),
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
+  outputDir: 'dist/.playwright/test-output',           // 所有 artifacts 输出目录
+  snapshotDir: 'dist/.playwright/test-output/snapshots',
   use: {
     baseURL,
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
