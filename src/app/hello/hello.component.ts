@@ -14,6 +14,8 @@ import { DataGridComponent } from '@public-ui/components';
   styles: [`
     .content-container {
       padding: 20px;
+      display: flex;
+      flex-direction: column;
     }
   `]
 })

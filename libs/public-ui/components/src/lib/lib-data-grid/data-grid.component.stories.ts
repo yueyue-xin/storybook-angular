@@ -7,6 +7,10 @@ const meta: Meta<DataGridComponent> = {
   component: DataGridComponent,
   parameters: {
     layout: 'fullscreen',
+    design: {
+      type: 'figma',
+      url: 'https://www.figma.com/proto/nIP9jriflrini0tFdtKU0y/9.1-Service---VKSM?page-id=151%3A42182&node-id=1140-19360&viewport=-6785%2C1674%2C0.36&t=8iuhcaUqTnmlNrkr-1&scaling=min-zoom&content-scaling=fixed&starting-point-node-id=1140%3A19360&show-proto-sidebar=1',
+    }
   },
   tags: ['autodocs'],
   argTypes: {

@@ -35,7 +35,9 @@
 
     <clr-dg-detail *clrIfDetail="let model">
       <div class="model-detail">
-        <h4>{{ model.name }}</h4>
+        <h4>{{ model.name }}
+          <cds-icon shape="tags" badge="success" />
+        </h4>
         <div class="detail-row">
           <strong>Default Context:</strong> {{ model.defaultContext }}
         </div>
