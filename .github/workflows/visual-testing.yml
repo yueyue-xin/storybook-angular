@@ -27,7 +27,7 @@ jobs:
       
 
       - name: Run Playwright tests
-        run: npx nx e2e storybook-project -- --update-snapshots --output ./test-results
+        run: npx nx e2e storybook-project -- --update-snapshots --output ./test-output
         env:
           HOME: /root
 
