@@ -6,7 +6,8 @@ import type { Preview } from '@storybook/angular';
 import { addons } from '@storybook/preview-api';
 import { themes } from '@storybook/theming';
 
-import { ClarityIcons } from '@cds/core/icon';
+import { ClarityIcons, tagsIcon } from '@cds/core/icon';
+ClarityIcons.addIcons(tagsIcon);
 
 // const mockVmwClarityThemeService = new MockVmwClarityThemeService();
 // const mockTranslocoService = new MockTranslocoService();
