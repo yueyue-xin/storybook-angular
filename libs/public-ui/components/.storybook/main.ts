@@ -1,28 +1,9 @@
 import type { StorybookConfig } from '@storybook/angular';
+import { baseConfig }  from '../../../../.storybook-base';
 
 const config: StorybookConfig = {
+  ...baseConfig,
   stories: ['../src/lib/**/*.mdx', '../src/lib/**/*.stories.@(ts|js)'],
-  addons: [
-    '@storybook/addon-essentials',
-    '@storybook/addon-interactions',
-    '@storybook/theming',
-    '@storybook/addon-designs',
-    '@storybook/addon-a11y',
-    '@chromatic-com/storybook',
-  ],
-  framework: {
-    name: '@storybook/angular',
-    options: {
-      enableIvy: true,
-      angularBrowserTarget: 'storybook-project:build',
-    },
-  },
-  core: {
-    builder: '@storybook/builder-webpack5',
-  },
-  staticDirs: [
-    { from: './assets/page-css-list', to: '/page-css-list' },
-  ],
 };
 
 export default config;

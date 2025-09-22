@@ -1,0 +1,58 @@
+<div class="login-wrapper">
+  <div class="login-container">
+    
+    <!-- Use header component -->
+    <app-login-header 
+      title="Welcome Back"
+      subtitle="Please enter your credentials to access the system">
+    </app-login-header>
+
+    <!-- Use alert component -->
+    <app-alert 
+      [message]="loginError"
+      type="danger"
+      (closed)="onErrorClosed()">
+    </app-alert>
+
+    <!-- Login form -->
+    <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="login-form">
+      
+      <!-- Use form field components -->
+      <app-form-field
+        label="Username"
+        placeholder="Enter your username"
+        type="text"
+        formControlName="username" />
+
+      <app-form-field
+        label="Password"
+        placeholder="Enter your password"
+        type="password"
+        formControlName="password">
+      </app-form-field>
+
+      <!-- Use loading button component -->
+      <div class="login-actions">
+        <app-loading-button
+          text="Sign In"
+          loadingText="Signing in..."
+          [loading]="isLoading"
+          [disabled]="loginForm.invalid"
+          type="submit"
+          (clicked)="onSubmit()">
+        </app-loading-button>
+      </div>
+
+      <!-- Other actions -->
+      <div class="login-links">
+        <button type="button" class="btn btn-link" (click)="onForgotPassword()">
+          Forgot Password?
+        </button>
+        <span class="divider">|</span>
+        <button type="button" class="btn btn-link" (click)="onRegister()">
+          Create Account
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

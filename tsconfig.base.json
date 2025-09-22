@@ -8,7 +8,9 @@
     "lib": ["es2020", "dom"],
     "baseUrl": ".",
     "paths": {
-      "@public-ui/components": ["libs/public-ui/components/src/index.ts"]
+      "@public-ui/components": ["libs/public-ui/components/src/index.ts"],
+      "@storybook-config": [".storybook-base/index.ts"],
+      "@storybook-config/*": [".storybook-base/*"]
     },
     "skipLibCheck": true
   },
