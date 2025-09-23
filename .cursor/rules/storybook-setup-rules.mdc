@@ -42,7 +42,7 @@ export default config;
 ```typescript
 // apps/[APP_NAME]/.storybook/preview.ts
 import type { Preview } from '@storybook/angular';
-import basePreview from '../../../.storybook-base/preview';
+import { basePreview } from '@storybook-config';
 
 const preview: Preview = {
   ...basePreview,
@@ -249,7 +249,9 @@ Automatically assign ports based on project type:
 1. **Always replace placeholders**: [APP_NAME], [LIB_PATH], [LIB_NAME], [PROJECT_NAME], [UNIQUE_PORT]
 2. **Detect project type**: Check if path starts with 'apps/' or 'libs/'
 3. **Use appropriate templates**: Apps vs Libraries have different configurations
-4. **Use relative imports**: Apps use '../../../.storybook-base/main', Libraries use '../../../../.storybook-base/main'
+4. **Use import paths**: 
+   - main.ts: Apps use '../../../.storybook-base/main', Libraries use '../../../../.storybook-base/main'  
+   - preview.ts: Use '@storybook-config' path mapping for basePreview import
 5. **Create assets directory**: Always create assets/page-css-list subdirectory for CSS files
 6. **Add compile-scss target**: Include for both apps and libraries with appropriate paths
 7. **Add dependsOn**: Ensure storybook targets depend on compile-scss
@@ -263,7 +265,7 @@ User says: "Configure Storybook for my-login-app"
 
 Auto-execute:
 1. Create apps/my-login-app/.storybook/ directory and assets/page-css-list subdirectory
-2. Generate main.ts (with relative import), preview.ts, tsconfig.json, styles.scss
+2. Generate main.ts (with relative import), preview.ts (with @storybook-config import), tsconfig.json, styles.scss
 3. Update apps/my-login-app/project.json with compile-scss, storybook and build-storybook targets (port 6007)
 4. Add dependsOn: ["compile-scss"] to storybook targets
 5. Update apps/my-login-app/tsconfig.json with storybook reference
