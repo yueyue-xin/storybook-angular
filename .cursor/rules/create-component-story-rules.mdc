@@ -1,0 +1,1027 @@
+---
+description: "Automatic story generation for Angular components with controls and interactions"
+globs: ["**/*.component.ts", "**/*.stories.ts"]
+alwaysApply: false
+---
+
+# 🎭 Component Story Auto-Generation Rules
+
+## Auto-Generation Trigger
+
+When user requests "Create story for [component-name]" or "Generate stories for [component-path]", automatically analyze the component and generate comprehensive stories.
+
+## Analysis Steps
+
+### Step 1: Component Analysis
+Automatically detect and extract:
+1. **@Input() properties** - for controls generation
+2. **@Output() events** - for action handlers
+3. **Interactive elements** - buttons, inputs, forms
+4. **Component dependencies** - imports and providers
+5. **Component type** - form, display, interactive, etc.
+
+### Step 2: Story Structure Generation
+
+#### Base Story Template
+```typescript
+import type { Meta, StoryObj } from '@storybook/angular';
+import { action } from '@storybook/addon-actions';
+import { userEvent, within, expect } from '@storybook/test';
+import { [COMPONENT_NAME] } from './[component-file-name]';
+
+const meta: Meta<[COMPONENT_NAME]> = {
+  title: '[APP_NAME]/[COMPONENT_CATEGORY]/[COMPONENT_NAME]',
+  component: [COMPONENT_NAME],
+  parameters: {
+    layout: 'centered',
+    docs: {
+      description: {
+        component: '[AUTO_GENERATED_DESCRIPTION]'
+      }
+    }
+  },
+  tags: ['autodocs'],
+  argTypes: {
+    [AUTO_GENERATED_ARG_TYPES]
+  },
+  args: {
+    [AUTO_GENERATED_DEFAULT_ARGS]
+  }
+};
+
+export default meta;
+type Story = StoryObj<[COMPONENT_NAME]>;
+
+// Base Default Story
+export const Default: Story = {
+  args: {
+    [DEFAULT_PROP_VALUES]
+  }
+};
+```
+
+### Step 3: Input/Output Controls Generation
+
+#### For @Input() Properties
+```typescript
+// Auto-generate based on TypeScript types
+argTypes: {
+  // String inputs
+  [STRING_INPUT]: {
+    control: 'text',
+    description: '[AUTO_DESCRIPTION]',
+    defaultValue: '[DEFAULT_VALUE]'
+  },
+  
+  // Boolean inputs
+  [BOOLEAN_INPUT]: {
+    control: 'boolean',
+    description: '[AUTO_DESCRIPTION]',
+    defaultValue: false
+  },
+  
+  // Number inputs
+  [NUMBER_INPUT]: {
+    control: { type: 'number', min: 0, max: 100 },
+    description: '[AUTO_DESCRIPTION]',
+    defaultValue: 0
+  },
+  
+  // Enum/Union inputs
+  [ENUM_INPUT]: {
+    control: 'select',
+    options: ['[OPTION_1]', '[OPTION_2]', '[OPTION_3]'],
+    description: '[AUTO_DESCRIPTION]',
+    defaultValue: '[FIRST_OPTION]'
+  },
+  
+  // Array inputs
+  [ARRAY_INPUT]: {
+    control: 'object',
+    description: '[AUTO_DESCRIPTION]',
+    defaultValue: []
+  },
+  
+  // Object inputs
+  [OBJECT_INPUT]: {
+    control: 'object',
+    description: '[AUTO_DESCRIPTION]',
+    defaultValue: {}
+  }
+}
+```
+
+#### For @Output() Events
+```typescript
+argTypes: {
+  // Auto-generate action configurations for outputs
+  [OUTPUT_EVENT]: {
+    action: '[output-event-name]'
+  },
+  [CLICK_EVENT]: {
+    action: 'clicked'
+  },
+  [CHANGE_EVENT]: {
+    action: 'changed'
+  },
+  [SUBMIT_EVENT]: {
+    action: 'submitted'
+  }
+},
+args: {
+  // Auto-generate action handlers for all outputs
+  [OUTPUT_EVENT]: action('[output-event-name]'),
+  [CLICK_EVENT]: action('clicked'),
+  [CHANGE_EVENT]: action('changed'),
+  [SUBMIT_EVENT]: action('submitted')
+}
+```
+
+### Step 4: HTML Template Analysis & Interactive Stories Generation
+
+#### HTML Element Detection Rules
+Analyze the component's HTML template to detect interactive elements:
+
+**Button Elements Detection:**
+- `<button>` tags
+- `<clr-button>` Clarity buttons  
+- `[role="button"]` elements
+- `<input type="button|submit|reset">`
+- Elements with `(click)` handlers
+
+**Input Elements Detection:**
+- `<input>` tags (all types)
+- `<textarea>` elements
+- `<select>` dropdowns
+- `<clr-input>`, `<clr-textarea>`, `<clr-select>` Clarity form controls
+- `<clr-checkbox>`, `<clr-radio>` Clarity form options
+- `<clr-datepicker>`, `<clr-combobox>` specialized Clarity inputs
+
+**Form Elements Detection:**
+- `<form>` containers
+- `<clr-form>` Clarity forms
+- Elements with `ngModel` or `formControl` directives
+
+#### Auto-Generated Stories Based on HTML Analysis
+
+**For Each Button Element Found:**
+```typescript
+export const ButtonInteractions: Story = {
+  ...Default,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Find all button elements
+    const buttons = canvas.getAllByRole('button');
+    const primaryButton = buttons[0]; // First button
+    const secondaryButton = buttons[1]; // Second button (if exists)
+    
+    // Test primary button
+    await userEvent.click(primaryButton);
+    await expect(primaryButton).toBeInTheDocument();
+    
+    // Test secondary button if exists
+    if (secondaryButton) {
+      await userEvent.click(secondaryButton);
+    }
+    
+    // Test disabled state (if button has disabled property)
+    if (primaryButton.hasAttribute('disabled')) {
+      await expect(primaryButton).toBeDisabled();
+    }
+  }
+};
+
+export const AllButtonStates: Story = {
+  ...Default,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const buttons = canvas.getAllByRole('button');
+    
+    for (const button of buttons) {
+      const buttonText = button.textContent || button.getAttribute('aria-label') || 'Button';
+      
+      // Test each button with type safety
+      if (button instanceof HTMLButtonElement && !button.disabled) {
+        await userEvent.click(button);
+        console.log(`Clicked: ${buttonText}`);
+      }
+    }
+  }
+};
+```
+
+**For Each Input Element Found:**
+```typescript
+export const InputInteractions: Story = {
+  ...Default,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Text inputs
+    const textInputs = canvas.queryAllByRole('textbox');
+    for (const input of textInputs) {
+      const label = input.getAttribute('aria-label') || input.getAttribute('placeholder') || 'input';
+      await userEvent.clear(input);
+      await userEvent.type(input, `Test ${label}`);
+      await expect(input).toHaveValue(`Test ${label}`);
+    }
+    
+    // Number inputs  
+    const numberInputs = canvas.queryAllByRole('spinbutton');
+    for (const input of numberInputs) {
+      await userEvent.clear(input);
+      await userEvent.type(input, '123');
+      await expect(input).toHaveValue('123');
+    }
+    
+    // Checkboxes
+    const checkboxes = canvas.queryAllByRole('checkbox');
+    for (const checkbox of checkboxes) {
+      await userEvent.click(checkbox);
+      await expect(checkbox).toBeChecked();
+    }
+    
+    // Radio buttons
+    const radios = canvas.queryAllByRole('radio');
+    if (radios.length > 0) {
+      await userEvent.click(radios[0]);
+      await expect(radios[0]).toBeChecked();
+    }
+    
+    // Select dropdowns
+    const selects = canvas.queryAllByRole('combobox');
+    for (const select of selects) {
+      await userEvent.click(select);
+      // Select first option if available
+      const options = canvas.queryAllByRole('option');
+      if (options.length > 0) {
+        await userEvent.click(options[0]);
+      }
+    }
+  }
+};
+
+export const FormValidation: Story = {
+  ...Default,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Test required field validation
+    const requiredInputs = canvas.queryAllByRole('textbox');
+    for (const input of requiredInputs) {
+      if (input.hasAttribute('required') || input.getAttribute('aria-required') === 'true') {
+        await userEvent.clear(input);
+        await userEvent.tab();
+        
+        // Check for validation message
+        const validationMessage = canvas.queryByText(/required/i);
+        if (validationMessage) {
+          await expect(validationMessage).toBeInTheDocument();
+        }
+        
+        // Fix the validation
+        await userEvent.type(input, 'Valid input');
+      }
+    }
+  }
+};
+```
+
+**For Clarity Component Combinations:**
+```typescript
+export const ClarityComponentFlow: Story = {
+  ...Default,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Handle Clarity Button + Input combinations
+    const clrButtons = canvasElement.querySelectorAll('clr-button, [clr-button]');
+    const clrInputs = canvasElement.querySelectorAll('clr-input, clr-textarea, clr-select');
+    
+    // Fill all Clarity inputs first
+    for (const input of clrInputs) {
+      const actualInput = input.querySelector('input, textarea, select');
+      if (actualInput && !actualInput.disabled) {
+        await userEvent.clear(actualInput);
+        
+        if (actualInput.type === 'email') {
+          await userEvent.type(actualInput, 'test@example.com');
+        } else if (actualInput.type === 'password') {
+          await userEvent.type(actualInput, 'password123');
+        } else if (actualInput.type === 'number') {
+          await userEvent.type(actualInput, '42');
+        } else {
+          await userEvent.type(actualInput, 'Test input');
+        }
+      }
+    }
+    
+    // Then interact with Clarity buttons
+    for (const clrButton of clrButtons) {
+      const actualButton = clrButton.querySelector('button') || clrButton;
+      if (actualButton instanceof HTMLButtonElement && !actualButton.disabled) {
+        await userEvent.click(actualButton);
+      }
+    }
+  }
+};
+
+export const ClarityModalFlow: Story = {
+  ...Default,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Handle Clarity Modal interactions
+    const modalTrigger = canvasElement.querySelector('[clr-modal-trigger], .modal-trigger');
+    if (modalTrigger instanceof HTMLElement) {
+      await userEvent.click(modalTrigger);
+      
+      // Wait for modal to appear
+      const modal = canvasElement.querySelector('clr-modal, .modal');
+      if (modal) {
+        // Fill form inside modal if exists
+        const modalInputs = modal.querySelectorAll('input, textarea, select');
+        for (const input of modalInputs) {
+          if (input instanceof HTMLInputElement && input.type === 'text') {
+            await userEvent.type(input, 'Modal input');
+          }
+        }
+        
+        // Click modal action buttons
+        const modalButtons = modal.querySelectorAll('button');
+        const submitButton = Array.from(modalButtons).find(btn => 
+          btn.textContent?.includes('Submit') || btn.textContent?.includes('确认')
+        );
+        
+        if (submitButton instanceof HTMLButtonElement) {
+          await userEvent.click(submitButton);
+        }
+      }
+    }
+  }
+};
+```
+
+#### For Modal/Dialog Components
+```typescript
+export const OpenModal: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    isOpen: true
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Test modal interactions
+    const closeButton = canvas.getByLabelText(/close/i);
+    await userEvent.click(closeButton);
+  }
+};
+
+export const ModalWithForm: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    isOpen: true
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Fill form in modal
+    const nameInput = canvas.getByLabelText(/name/i);
+    const submitButton = canvas.getByRole('button', { name: /submit/i });
+    
+    await userEvent.type(nameInput, 'John Doe');
+    await userEvent.click(submitButton);
+  }
+};
+```
+
+### Step 5: Advanced Story Patterns
+
+#### Data-driven Stories
+```typescript
+export const WithDifferentData: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    items: [
+      { id: 1, name: 'Item 1', status: 'active' },
+      { id: 2, name: 'Item 2', status: 'inactive' },
+      { id: 3, name: 'Item 3', status: 'pending' }
+    ]
+  }
+};
+
+export const EmptyState: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    items: []
+  }
+};
+
+export const LoadingState: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    loading: true,
+    items: []
+  }
+};
+```
+
+
+## Auto-Generation Rules
+
+### HTML Template Analysis & Component Type Detection
+
+#### Template Parsing Strategy
+1. **Parse HTML Template**: Analyze the component's template file (.html)
+2. **Element Detection**: Identify interactive elements using CSS selectors
+3. **Attribute Analysis**: Check for Angular directives and HTML attributes
+4. **Content Analysis**: Examine element content and structure
+
+#### Interactive Element Categories
+
+**Button Elements:**
+- Standard: `<button>`, `<input type="button|submit|reset">`
+- Clarity: `<clr-button>`, `[clr-button]`, `<clr-icon-button>`
+- Custom: `[role="button"]`, elements with `(click)` handlers
+- Action triggers: `[clr-modal-trigger]`, `[clr-dropdown-trigger]`
+
+**Input Elements:**
+- Text inputs: `<input type="text|email|password|search|url">`, `<textarea>`
+- Numbers: `<input type="number|range">`
+- Selections: `<select>`, `<input type="radio|checkbox">`
+- Dates: `<input type="date|time|datetime-local">`
+- Files: `<input type="file">`
+- Clarity inputs: `<clr-input>`, `<clr-textarea>`, `<clr-select>`, `<clr-checkbox>`, `<clr-radio>`, `<clr-datepicker>`, `<clr-combobox>`
+
+**Complex Components:**
+- Forms: `<form>`, `<clr-form>`, containers with multiple inputs
+- Modals: `<clr-modal>`, `<clr-wizard>`, `[clr-modal]`
+- Data displays: `<clr-datagrid>`, `<clr-tree>`, `<clr-accordion>`
+- Navigation: `<clr-tabs>`, `<clr-stepper>`, `<clr-vertical-nav>`
+
+#### Auto-Story Generation Logic
+```typescript
+// Template analysis results determine story generation:
+const templateAnalysis = {
+  hasButtons: ['<button>', '<clr-button>', '(click)'].some(exists),
+  hasInputs: ['<input>', '<clr-input>', 'formControl'].some(exists),
+  hasForm: ['<form>', '<clr-form>', 'ngForm'].some(exists),
+  hasModal: ['<clr-modal>', '[clr-modal]'].some(exists),
+  hasDatagrid: ['<clr-datagrid>'].some(exists),
+  // ... other element types
+};
+
+// Generate stories based on detected elements with type safety
+if (templateAnalysis.hasButtons) generateButtonStories();
+if (templateAnalysis.hasInputs) generateInputStories();
+if (templateAnalysis.hasForm) generateFormStories();
+if (templateAnalysis.hasModal) generateModalStories();
+
+// Best practices for element selection:
+// 1. Use canvasElement.querySelector() for direct DOM access
+// 2. Use canvas.getByRole() for accessibility-based queries
+// 3. Add type checks: element instanceof HTMLButtonElement
+// 4. Check disabled state before interactions
+```
+
+### Story Generation Strategy
+```typescript
+// Base stories (always generated)
+- Default: Basic component with default props
+- [ComponentType]Variants: Different visual states
+
+// Interactive stories (conditional based on component type)
+- UserInteractions: For components with buttons/inputs
+- ValidationStates: For form components
+- LoadingStates: For async components
+- ErrorStates: For components with error handling
+- EmptyStates: For data display components
+
+// Advanced stories (optional based on complexity)
+- PerformanceTests: For data-heavy components
+```
+
+### Auto-Generated Controls
+```typescript
+// Type mapping for controls
+const controlMap = {
+  'string': { control: 'text' },
+  'number': { control: 'number' },
+  'boolean': { control: 'boolean' },
+  'Date': { control: 'date' },
+  "'small' | 'medium' | 'large'": { 
+    control: 'select', 
+    options: ['small', 'medium', 'large'] 
+  },
+  'Array<T>': { control: 'object' },
+  'object': { control: 'object' },
+  'Function': { control: false } // Hide function props
+};
+```
+
+## HTML Template Analysis Examples
+
+### Example 1: Complex Login Form Component
+```html
+<!-- login.component.html -->
+<clr-form>
+  <clr-input-container>
+    <label>Username</label>
+    <input clrInput type="email" [(ngModel)]="username" required />
+    <clr-control-error>Username is required</clr-control-error>
+  </clr-input-container>
+  
+  <clr-password-container>
+    <label>Password</label>
+    <input clrPassword [(ngModel)]="password" required />
+    <clr-control-error>Password is required</clr-control-error>
+  </clr-password-container>
+  
+  <clr-checkbox-wrapper>
+    <input type="checkbox" clrCheckbox [(ngModel)]="rememberMe" />
+    <label>Remember me</label>
+  </clr-checkbox-wrapper>
+  
+  <div class="btn-group">
+    <button type="submit" class="btn btn-primary" (click)="onLogin()">Login</button>
+    <button type="button" class="btn btn-outline" (click)="onCancel()">Cancel</button>
+  </div>
+</clr-form>
+```
+
+**Generated Stories for Above Template:**
+```typescript
+// Auto-detected elements: 2 inputs, 1 checkbox, 2 buttons, 1 form
+export const LoginFormInteractions: Story = {
+  ...Default,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Fill username (email input)
+    const usernameInput = canvas.getByLabelText(/username/i);
+    await userEvent.type(usernameInput, 'test@example.com');
+    
+    // Fill password
+    const passwordInput = canvas.getByLabelText(/password/i);
+    await userEvent.type(passwordInput, 'password123');
+    
+    // Check remember me
+    const rememberCheckbox = canvas.getByLabelText(/remember me/i);
+    await userEvent.click(rememberCheckbox);
+    
+    // Click login button
+    const loginButton = canvas.getByRole('button', { name: /login/i });
+    await userEvent.click(loginButton);
+  }
+};
+
+export const FormValidationFlow: Story = {
+  ...Default,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Try to submit empty form
+    const loginButton = canvas.getByRole('button', { name: /login/i });
+    await userEvent.click(loginButton);
+    
+    // Check validation errors appear
+    await expect(canvas.getByText(/username is required/i)).toBeInTheDocument();
+    await expect(canvas.getByText(/password is required/i)).toBeInTheDocument();
+    
+    // Fix validation errors
+    await userEvent.type(canvas.getByLabelText(/username/i), 'valid@email.com');
+    await userEvent.type(canvas.getByLabelText(/password/i), 'validpassword');
+    
+    // Submit again
+    await userEvent.click(loginButton);
+  }
+};
+
+export const CancelFlow: Story = {
+  ...Default,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Fill some data
+    await userEvent.type(canvas.getByLabelText(/username/i), 'partial@email.com');
+    
+    // Click cancel
+    const cancelButton = canvas.getByRole('button', { name: /cancel/i });
+    await userEvent.click(cancelButton);
+  }
+};
+```
+
+### Example 2: Data Management Component
+```html
+<!-- user-management.component.html -->
+<clr-datagrid>
+  <clr-dg-column>Name</clr-dg-column>
+  <clr-dg-column>Email</clr-dg-column>
+  <clr-dg-column>Actions</clr-dg-column>
+  
+  <clr-dg-row *ngFor="let user of users">
+    <clr-dg-cell>{{user.name}}</clr-dg-cell>
+    <clr-dg-cell>{{user.email}}</clr-dg-cell>
+    <clr-dg-cell>
+      <clr-icon-button (click)="editUser(user)" clrTooltip="Edit">
+        <clr-icon shape="edit"></clr-icon>
+      </clr-icon-button>
+      <clr-icon-button (click)="deleteUser(user)" clrTooltip="Delete">
+        <clr-icon shape="trash"></clr-icon>
+      </clr-icon-button>
+    </clr-dg-cell>
+  </clr-dg-row>
+</clr-datagrid>
+
+<button class="btn btn-primary" (click)="openAddModal()">Add User</button>
+```
+
+**Generated Stories:**
+```typescript
+// Auto-detected: 1 datagrid, multiple icon buttons, 1 add button
+export const DatagridInteractions: Story = {
+  ...Default,
+  args: {
+    users: [
+      { id: 1, name: 'John Doe', email: 'john@example.com' },
+      { id: 2, name: 'Jane Smith', email: 'jane@example.com' }
+    ]
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Test edit button on first row
+    const editButtons = canvas.getAllByLabelText(/edit/i);
+    if (editButtons[0] instanceof HTMLButtonElement) {
+      await userEvent.click(editButtons[0]);
+    }
+    
+    // Test delete button
+    const deleteButtons = canvas.getAllByLabelText(/delete/i);
+    if (deleteButtons[0] instanceof HTMLButtonElement) {
+      await userEvent.click(deleteButtons[0]);
+    }
+    
+    // Test add user button
+    const addButton = canvas.getByRole('button', { name: /add user/i });
+    if (addButton instanceof HTMLButtonElement) {
+      await userEvent.click(addButton);
+    }
+  }
+};
+
+export const EmptyDatagrid: Story = {
+  ...Default,
+  args: {
+    users: []
+  }
+};
+```
+
+## Template Examples
+
+### Simple Button Component Story
+```typescript
+export const ButtonStories = {
+  Default: { args: { text: 'Click me' } },
+  Primary: { args: { text: 'Primary', variant: 'primary' } },
+  Secondary: { args: { text: 'Secondary', variant: 'secondary' } },
+  Disabled: { args: { text: 'Disabled', disabled: true } },
+  Loading: { args: { text: 'Loading...', loading: true } },
+  WithIcon: { args: { text: 'With Icon', icon: 'user' } }
+};
+```
+
+### Complex Form Component Story
+```typescript
+export const FormStories = {
+  Default: { args: { mode: 'create' } },
+  EditMode: { args: { mode: 'edit', initialData: sampleData } },
+  WithValidation: { /* validation interactions */ },
+  SubmissionFlow: { /* complete form submission test */ },
+  ErrorHandling: { /* error state testing */ }
+};
+```
+
+### Storybook Decorators Best Practices
+```typescript
+// ✅ Correct decorator syntax (Method 1 - Direct function call)
+decorators: [
+  (story) => ({
+    template: `<div style="width: 400px; padding: 20px;">${story().template}</div>`,
+    moduleMetadata: {
+      imports: [ReactiveFormsModule]
+    },
+    props: story().props
+  })
+]
+
+// ✅ Correct decorator syntax (Method 2 - Story function approach)
+decorators: [
+  (storyFn) => {
+    const story = storyFn();
+    return {
+      ...story,
+      template: `<div style="padding: 20px;">${story.template}</div>`,
+      props: {
+        ...story.props
+      }
+    }
+  }
+]
+
+// ❌ Incorrect - missing function call
+decorators: [
+  (story) => ({
+    template: `<div>${story.template}</div>`, // Missing ()
+    props: story.props // Missing ()
+  })
+]
+```
+
+### Complex Render Functions
+```typescript
+// ✅ Correct - FormControl created in render function
+export const InFormContext: Story = {
+  render: (args) => {
+    const usernameControl = new FormControl('', [Validators.required]);
+    const emailControl = new FormControl('', [Validators.required, Validators.email]);
+    const passwordControl = new FormControl('', [Validators.required, Validators.minLength(8)]);
+
+    return {
+      props: {
+        ...args,
+        usernameControl,
+        emailControl,
+        passwordControl,
+      },
+      template: `
+        <form style="max-width: 400px;">
+          <app-form-field [control]="usernameControl"></app-form-field>
+          <app-form-field [control]="emailControl"></app-form-field>
+          <app-form-field [control]="passwordControl"></app-form-field>
+        </form>
+      `,
+      moduleMetadata: {
+        imports: [ReactiveFormsModule],
+      },
+    }
+  }
+};
+
+// ❌ Incorrect - FormControl in args (causes initialization issues)
+export const InFormContext: Story = {
+  render: (args) => ({
+    props: args,
+    template: `<form>...</form>`
+  }),
+  args: {
+    usernameControl: new FormControl('', [Validators.required]) // Problem: created at module level
+  }
+};
+```
+
+## Usage Examples
+
+### Trigger Commands
+```
+Create story for LoginComponent
+Generate stories for apps/my-app/src/components/button/button.component.ts
+Auto-generate stories for UserFormComponent with interactions
+```
+
+### Generated File Structure
+```
+components/
+  button/
+    button.component.ts
+    button.component.stories.ts  // 🔄 Auto-generated
+  form/
+    user-form.component.ts
+    user-form.component.stories.ts  // 🔄 Auto-generated
+```
+
+## Advanced Features
+
+### Mock Data Generation
+```typescript
+// Auto-generate realistic mock data based on prop types
+const mockUserData = {
+  id: 1,
+  name: 'John Doe',
+  email: 'john@example.com',
+  avatar: 'https://via.placeholder.com/150',
+  role: 'admin'
+};
+```
+
+## Code Quality Best Practices
+
+### Type Safety in Stories
+Always add type checks when interacting with DOM elements:
+
+```typescript
+// ✅ Good - Type safe
+const button = canvas.getByRole('button');
+if (button instanceof HTMLButtonElement && !button.disabled) {
+  await userEvent.click(button);
+}
+
+// ❌ Bad - No type checking
+const button = canvas.getByRole('button');
+if (!button.disabled) {
+  await userEvent.click(button);
+}
+```
+
+### Element Selection Best Practices
+Use the appropriate method for element selection:
+
+```typescript
+// For direct DOM access (Clarity components)
+const spinner = canvasElement.querySelector('clr-spinner');
+const clrButtons = canvasElement.querySelectorAll('clr-button');
+
+// For accessibility-based queries (semantic elements)
+const button = canvas.getByRole('button');
+const textInput = canvas.getByLabelText(/username/i);
+
+// For testing library queries
+const canvas = within(canvasElement);
+```
+
+### Input Type Safety
+Add type guards for input elements:
+
+```typescript
+const input = canvas.getByLabelText(/email/i);
+if (input instanceof HTMLInputElement) {
+  await userEvent.type(input, 'test@example.com');
+  await expect(input).toHaveValue('test@example.com');
+}
+```
+
+### Error Prevention
+Always check element existence and state:
+
+```typescript
+// Check if element exists and is correct type
+const modalTrigger = canvasElement.querySelector('[clr-modal-trigger]');
+if (modalTrigger instanceof HTMLElement) {
+  await userEvent.click(modalTrigger);
+}
+
+// Check disabled state before interaction
+if (button instanceof HTMLButtonElement && !button.disabled) {
+  await userEvent.click(button);
+}
+```
+
+### Storybook Syntax Corrections
+
+#### Decorator Function Calls
+Always call story functions in decorators:
+
+```typescript
+// ✅ Correct - call story() function (Method 1)
+decorators: [
+  (story) => ({
+    template: `<div>${story().template}</div>`,
+    props: story().props,
+    moduleMetadata: { imports: [SomeModule] }
+  })
+]
+
+// ✅ Correct - storyFn approach (Method 2)
+decorators: [
+  (storyFn) => {
+    const story = storyFn();
+    return {
+      ...story,
+      template: `<div>${story.template}</div>`,
+      props: { ...story.props }
+    }
+  }
+]
+
+// ❌ Incorrect - missing function calls
+decorators: [
+  (story) => ({
+    template: `<div>${story.template}</div>`, // Missing ()
+    props: story.props // Missing ()
+  })
+]
+```
+
+#### Action Configuration for Events
+Properly configure actions for @Output() events:
+
+```typescript
+// ✅ Correct - Configure actions in both argTypes and args
+const meta: Meta<ComponentType> = {
+  argTypes: {
+    // Configure action in argTypes for automatic detection
+    primaryClick: {
+      action: 'primaryClick'
+    },
+    secondaryClick: {
+      action: 'secondaryClick'
+    }
+  },
+  args: {
+    // Also bind action handlers in args
+    primaryClick: action('primaryClick'),
+    secondaryClick: action('secondaryClick')
+  }
+};
+
+// ❌ Incorrect - only args without argTypes action config
+const meta: Meta<ComponentType> = {
+  args: {
+    primaryClick: action('primaryClick'), // Actions may not be captured
+    secondaryClick: action('secondaryClick')
+  }
+};
+```
+
+#### Default Args Configuration
+Include meaningful default values in args:
+
+```typescript
+// ✅ Correct - Include default values for better story display
+const meta: Meta<ModalComponent> = {
+  args: {
+    title: 'Sample Modal',
+    primaryButtonText: 'Confirm',
+    secondaryButtonText: 'Cancel',
+    isOpen: true, // Default to open for better visualization
+    primaryClick: action('primaryClick'),
+    secondaryClick: action('secondaryClick')
+  }
+};
+
+// ❌ Incorrect - Empty or minimal args
+const meta: Meta<ModalComponent> = {
+  args: {
+    primaryClick: action('primaryClick'),
+    secondaryClick: action('secondaryClick')
+    // Missing default values for better UX
+  }
+};
+```
+
+#### Render Function Best Practices
+Create complex objects inside render functions, not in args:
+
+```typescript
+// ✅ Correct - FormControl created in render function
+export const WithFormControls: Story = {
+  render: (args) => {
+    const control = new FormControl('', [Validators.required]);
+    return {
+      props: { ...args, control },
+      template: `<app-component [control]="control"></app-component>`
+    };
+  }
+};
+
+// ❌ Incorrect - FormControl in args (module-level instantiation)
+export const WithFormControls: Story = {
+  args: {
+    control: new FormControl('', [Validators.required]) // Problem!
+  }
+};
+```
+
+#### Module Imports in Custom Renders
+Always include necessary imports when using custom templates:
+
+```typescript
+// ✅ Correct - includes moduleMetadata
+render: (args) => ({
+  props: args,
+  template: `<custom-template>...</custom-template>`,
+  moduleMetadata: {
+    imports: [ReactiveFormsModule, CustomModule]
+  }
+})
+
+// ❌ Incorrect - missing required imports
+render: (args) => ({
+  props: args,
+  template: `<custom-template>...</custom-template>`
+  // Missing moduleMetadata
+})
+```
+
+---
+
+**Note**: This rule analyzes TypeScript component files and automatically generates comprehensive, interactive stories with proper controls, actions, and interaction tests using type-safe best practices.

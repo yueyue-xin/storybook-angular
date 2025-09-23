@@ -1,0 +1,285 @@
+---
+description: "Storybook setup and configuration automation for Nx monorepo"
+globs: ["apps/**", "libs/**", "**/.storybook/**", "**/*.stories.*"]
+alwaysApply: false
+---
+
+# 🎨 Storybook Auto-Configuration Rules
+
+## Auto-Setup Trigger
+
+When user requests "Configure Storybook for [project-name]" or "Setup Storybook for [project-name]", automatically execute the following steps:
+
+### Step 1: Create Directory Structure
+```bash
+mkdir -p [PROJECT_PATH]/.storybook
+mkdir -p [PROJECT_PATH]/.storybook/assets/page-css-list
+```
+
+### Step 2: Generate Configuration Files
+
+#### For Apps (apps/[APP_NAME])
+
+**Create main.ts:**
+```typescript
+// apps/[APP_NAME]/.storybook/main.ts
+import type { StorybookConfig } from '@storybook/angular';
+import baseConfig from '../../../.storybook-base/main';
+
+const config: StorybookConfig = {
+  ...baseConfig,
+  stories: ['../src/**/*.stories.@(ts|js|mdx)'],
+};
+
+export default config;
+
+// To customize your webpack configuration you can use the webpackFinal field.
+// Check https://storybook.js.org/docs/react/builders/webpack#extending-storybooks-webpack-config
+// and https://nx.dev/recipes/storybook/custom-builder-configs
+```
+
+**Create preview.ts:**
+```typescript
+// apps/[APP_NAME]/.storybook/preview.ts
+import type { Preview } from '@storybook/angular';
+import basePreview from '../../../.storybook-base/preview';
+
+const preview: Preview = {
+  ...basePreview,
+  // [APP_NAME] specific config
+};
+
+export default preview;
+```
+
+**Create tsconfig.json:**
+```json
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "emitDecoratorMetadata": true
+  },
+  "exclude": ["../**/*.spec.ts"],
+  "include": [
+    "../src/**/*.stories.ts",
+    "../src/**/*.stories.js",
+    "../src/**/*.stories.jsx",
+    "../src/**/*.stories.tsx", 
+    "../src/**/*.stories.mdx",
+    "*.js",
+    "*.ts"
+  ]
+}
+```
+
+**Create styles.scss:**
+```scss
+// Clarity UI Core styles
+@import '@clr/ui/clr-ui.min.css';
+@import '@cds/core/global.min.css';
+@import '@cds/core/styles/theme.dark.min.css';
+
+// Custom Storybook styles
+body {
+  margin: 0;
+  padding: 0;
+}
+```
+
+#### For Libraries (libs/[LIB_PATH])
+
+**Create main.ts (Library version):**
+```typescript
+// libs/[LIB_PATH]/.storybook/main.ts
+import type { StorybookConfig } from '@storybook/angular';
+import { baseConfig } from '../../../.storybook-base';
+
+const config: StorybookConfig = {
+  ...baseConfig,
+  stories: ['../src/lib/**/*.mdx', '../src/lib/**/*.stories.@(ts|js)'],
+};
+
+export default config;
+```
+
+### Step 3: Update Project Configuration
+
+#### For Apps - Add to project.json:
+```json
+{
+  "targets": {
+    "compile-scss": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "sass src/app/styles/provisioning-ui.scss apps/[APP_NAME]/.storybook/assets/page-css-list/provisioning-ui.css --no-source-map",
+          "sass src/app/styles/cloud-auto.scss apps/[APP_NAME]/.storybook/assets/page-css-list/cloud-auto.css --no-source-map",
+          "sass src/app/styles/relocation.scss apps/[APP_NAME]/.storybook/assets/page-css-list/relocation.css --no-source-map"
+        ],
+        "parallel": true
+      }
+    },
+    "storybook": {
+      "executor": "@storybook/angular:start-storybook",
+      "dependsOn": ["compile-scss"],
+      "options": {
+        "port": [UNIQUE_PORT],
+        "tsConfig": "apps/[APP_NAME]/.storybook/tsconfig.json",
+        "configDir": "apps/[APP_NAME]/.storybook",
+        "browserTarget": "storybook-project:build",
+        "compodoc": false,
+        "styles": ["apps/[APP_NAME]/.storybook/styles.scss"]
+      },
+      "configurations": {
+        "ci": {
+          "quiet": true
+        }
+      }
+    },
+    "build-storybook": {
+      "executor": "@storybook/angular:build-storybook",
+      "dependsOn": ["compile-scss"],
+      "outputs": ["{options.outputDir}"],
+      "options": {
+        "tsConfig": "apps/[APP_NAME]/.storybook/tsconfig.json",
+        "configDir": "apps/[APP_NAME]/.storybook", 
+        "browserTarget": "storybook-project:build",
+        "compodoc": false,
+        "styles": ["apps/[APP_NAME]/.storybook/styles.scss"],
+        "outputDir": "dist/storybook/[APP_NAME]"
+      },
+      "configurations": {
+        "ci": {
+          "quiet": true
+        }
+      }
+    }
+  }
+}
+```
+
+#### For Libraries - Add to project.json:
+```json
+{
+  "targets": {
+    "compile-scss": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "sass src/app/styles/provisioning-ui.scss libs/[LIB_PATH]/.storybook/assets/page-css-list/provisioning-ui.css --no-source-map",
+          "sass src/app/styles/cloud-auto.scss libs/[LIB_PATH]/.storybook/assets/page-css-list/cloud-auto.css --no-source-map",
+          "sass src/app/styles/relocation.scss libs/[LIB_PATH]/.storybook/assets/page-css-list/relocation.css --no-source-map"
+        ],
+        "parallel": true
+      }
+    },
+    "storybook": {
+      "executor": "@storybook/angular:start-storybook",
+      "dependsOn": ["compile-scss"],
+      "options": {
+        "port": [UNIQUE_PORT],
+        "tsConfig": "libs/[LIB_PATH]/.storybook/tsconfig.json",
+        "configDir": "libs/[LIB_PATH]/.storybook",
+        "browserTarget": "storybook-project:build",
+        "compodoc": false,
+        "styles": ["libs/[LIB_PATH]/.storybook/styles.scss"]
+      },
+      "configurations": {
+        "ci": {
+          "quiet": true
+        }
+      }
+    },
+    "build-storybook": {
+      "executor": "@storybook/angular:build-storybook", 
+      "dependsOn": ["compile-scss"],
+      "outputs": ["{options.outputDir}"],
+      "options": {
+        "tsConfig": "libs/[LIB_PATH]/.storybook/tsconfig.json",
+        "configDir": "libs/[LIB_PATH]/.storybook",
+        "browserTarget": "storybook-project:build",
+        "compodoc": false,
+        "styles": ["libs/[LIB_PATH]/.storybook/styles.scss"],
+        "outputDir": "dist/storybook/[LIB_NAME]"
+      },
+      "configurations": {
+        "ci": {
+          "quiet": true
+        }
+      }
+    }
+  }
+}
+```
+
+### Step 4: Update TypeScript Configuration
+
+Add storybook reference to main tsconfig.json:
+```json
+{
+  "references": [
+    {
+      "path": "./.storybook/tsconfig.json"
+    }
+  ]
+}
+```
+
+### Step 5: Update Package.json Scripts
+
+Add to root package.json:
+```json
+{
+  "scripts": {
+    "storybook:[PROJECT_NAME]": "nx storybook [PROJECT_NAME]",
+    "build-storybook:[PROJECT_NAME]": "nx build-storybook [PROJECT_NAME]"
+  }
+}
+```
+
+## Port Assignment Strategy
+
+Automatically assign ports based on project type:
+- Apps: Start from 6006, increment by 1
+- Libraries: Start from 4400, increment by 1  
+- Existing ports: my-login-app should use 6007
+
+## Automation Rules
+
+1. **Always replace placeholders**: [APP_NAME], [LIB_PATH], [LIB_NAME], [PROJECT_NAME], [UNIQUE_PORT]
+2. **Detect project type**: Check if path starts with 'apps/' or 'libs/'
+3. **Use appropriate templates**: Apps vs Libraries have different configurations
+4. **Use relative imports**: Apps use '../../../.storybook-base/main', Libraries use '../../../../.storybook-base/main'
+5. **Create assets directory**: Always create assets/page-css-list subdirectory for CSS files
+6. **Add compile-scss target**: Include for both apps and libraries with appropriate paths
+7. **Add dependsOn**: Ensure storybook targets depend on compile-scss
+8. **Ensure unique ports**: Check existing configurations to avoid conflicts
+9. **Create all files**: Don't ask for confirmation, create all necessary files
+10. **Update existing files**: Merge new configuration into existing project.json and tsconfig.json
+
+## Example Usage
+
+User says: "Configure Storybook for my-login-app"
+
+Auto-execute:
+1. Create apps/my-login-app/.storybook/ directory and assets/page-css-list subdirectory
+2. Generate main.ts (with relative import), preview.ts, tsconfig.json, styles.scss
+3. Update apps/my-login-app/project.json with compile-scss, storybook and build-storybook targets (port 6007)
+4. Add dependsOn: ["compile-scss"] to storybook targets
+5. Update apps/my-login-app/tsconfig.json with storybook reference
+6. Update root package.json with scripts
+7. Report completion with next steps
+
+## Test Commands
+
+After setup, provide these test commands:
+```bash
+# Start storybook
+nx storybook [project-name]
+
+# Build storybook  
+nx build-storybook [project-name]
+
+# Visit URL
+http://localhost:[assigned-port]
+```

@@ -1,9 +1,10 @@
 import type { StorybookConfig } from '@storybook/angular';
-import baseConfig from '../../../../.storybook-base/main';
+import baseConfig from '../../../.storybook-base/main';
+
 
 const config: StorybookConfig = {
   ...baseConfig,
-  stories: ['../src/lib/**/*.mdx', '../src/lib/**/*.stories.@(ts|js)']
+  stories: ['../src/**/*.stories.@(ts|js|mdx)'],
 };
 
 export default config;

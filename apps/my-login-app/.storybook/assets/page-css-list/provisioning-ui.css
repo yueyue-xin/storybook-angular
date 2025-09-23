@@ -1,0 +1,8 @@
+clr-modal .modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: linear-gradient(135deg, #f0f8ff, white);
+  border-top: 2px solid rgba(0, 124, 187, 0.2);
+}

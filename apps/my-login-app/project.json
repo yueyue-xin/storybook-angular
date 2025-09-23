@@ -80,6 +80,53 @@
         "buildTarget": "my-login-app:build",
         "spa": true
       }
+    },
+    "compile-scss": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "sass src/app/styles/provisioning-ui.scss apps/my-login-app/.storybook/assets/page-css-list/provisioning-ui.css --no-source-map",
+          "sass src/app/styles/cloud-auto.scss apps/my-login-app/.storybook/assets/page-css-list/cloud-auto.css --no-source-map",
+          "sass src/app/styles/relocation.scss apps/my-login-app/.storybook/assets/page-css-list/relocation.css --no-source-map"
+        ],
+        "parallel": true
+      }
+    },
+
+    "storybook": {
+      "executor": "@storybook/angular:start-storybook",
+      "dependsOn": ["compile-scss"],
+      "options": {
+        "port": 6007,
+        "tsConfig": "apps/my-login-app/.storybook/tsconfig.json",
+        "configDir": "apps/my-login-app/.storybook",
+        "browserTarget": "storybook-project:build",
+        "compodoc": false,
+        "styles": ["apps/my-login-app/.storybook/styles.scss"]
+      },
+      "configurations": {
+        "ci": {
+          "quiet": true
+        }
+      }
+    },
+    "build-storybook": {
+      "executor": "@storybook/angular:build-storybook",
+      "dependsOn": ["compile-scss"],
+      "outputs": ["{options.outputDir}"],
+      "options": {
+        "tsConfig": "apps/my-login-app/.storybook/tsconfig.json",
+        "configDir": "apps/my-login-app/.storybook",
+        "browserTarget": "storybook-project:build",
+        "compodoc": false,
+        "styles": ["apps/my-login-app/.storybook/styles.scss"],
+        "outputDir": "dist/storybook/my-login-app"
+      },
+      "configurations": {
+        "ci": {
+          "quiet": true
+        }
+      }
     }
   }
 }

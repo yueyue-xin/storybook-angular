@@ -8,6 +8,8 @@
     "test": "nx test",
     "storybook": "nx storybook public-ui-components",
     "build-storybook": "nx build-storybook public-ui-components",
+    "storybook:my-login-app": "nx storybook my-login-app",
+    "build-storybook:my-login-app": "nx build-storybook my-login-app",
     "e2e": "nx e2e storybook-project",
     "e2e:ui": "nx e2e storybook-project --ui",
     "e2e:debug": "nx e2e storybook-project --debug"
@@ -77,6 +79,7 @@
     "jest-environment-jsdom": "^30.0.2",
     "jest-preset-angular": "~14.4.0",
     "jest-util": "^30.0.2",
+    "jsonc-eslint-parser": "^2.1.0",
     "nx": "21.4.1",
     "playwright": "^1.55.0",
     "prettier": "^2.6.2",

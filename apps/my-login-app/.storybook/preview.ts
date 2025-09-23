@@ -3,7 +3,7 @@ import { basePreview } from '@storybook-config';
 
 const preview: Preview = {
   ...basePreview,
-  // public-ui-components specific config
+  // my-login-app specific config
 };
 
 export default preview;

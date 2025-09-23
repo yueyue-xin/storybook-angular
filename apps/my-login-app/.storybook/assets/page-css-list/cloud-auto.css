@@ -1,0 +1,8 @@
+clr-modal .modal-footer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-gap: 12px;
+  padding: 16px;
+  background: radial-gradient(circle, #e8f5e8, #f8fff8);
+  border-top: 1px dashed #28a745;
+}
