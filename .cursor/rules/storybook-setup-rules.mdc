@@ -18,13 +18,37 @@ mkdir -p [PROJECT_PATH]/.storybook/assets/page-css-list
 
 ### Step 2: Generate Configuration Files
 
+#### Path Calculation Logic
+Before generating configuration files, calculate the correct relative path to `.storybook-base/main`:
+
+**Path Calculation Rules:**
+- For `apps/[APP_NAME]/.storybook/` → `../../../.storybook-base/main` (3 levels up)
+- For `libs/[LIB_NAME]/.storybook/` → `../../../../.storybook-base/main` (4 levels up) 
+- For `libs/[LIB_CATEGORY]/[LIB_NAME]/.storybook/` → `../../../../../.storybook-base/main` (5 levels up)
+
+**Dynamic Path Calculation:**
+```typescript
+// Calculate relative path based on project location
+function calculateStorybookBasePath(projectPath: string): string {
+  const segments = projectPath.split('/').filter(Boolean);
+  const storybookIndex = segments.findIndex(s => s === '.storybook');
+  const levelsUp = storybookIndex; // Number of directories to go up
+  return '../'.repeat(levelsUp) + '.storybook-base/main';
+}
+
+// Examples:
+// apps/card-app/.storybook → '../../../.storybook-base/main'
+// libs/ui/components/.storybook → '../../../../.storybook-base/main'
+// libs/shared/.storybook → '../../../.storybook-base/main'
+```
+
 #### For Apps (apps/[APP_NAME])
 
 **Create main.ts:**
 ```typescript
 // apps/[APP_NAME]/.storybook/main.ts
 import type { StorybookConfig } from '@storybook/angular';
-import baseConfig from '../../../.storybook-base/main';
+import baseConfig from '[CALCULATED_RELATIVE_PATH]';
 
 const config: StorybookConfig = {
   ...baseConfig,
@@ -57,7 +81,8 @@ export default preview;
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "emitDecoratorMetadata": true
+    "emitDecoratorMetadata": true,
+    "skipLibCheck": true
   },
   "exclude": ["../**/*.spec.ts"],
   "include": [
@@ -92,7 +117,7 @@ body {
 ```typescript
 // libs/[LIB_PATH]/.storybook/main.ts
 import type { StorybookConfig } from '@storybook/angular';
-import { baseConfig } from '../../../.storybook-base';
+import baseConfig from '[CALCULATED_RELATIVE_PATH]';
 
 const config: StorybookConfig = {
   ...baseConfig,
@@ -112,9 +137,9 @@ export default config;
       "executor": "nx:run-commands",
       "options": {
         "commands": [
-          "sass src/app/styles/provisioning-ui.scss apps/[APP_NAME]/.storybook/assets/page-css-list/provisioning-ui.css --no-source-map",
-          "sass src/app/styles/cloud-auto.scss apps/[APP_NAME]/.storybook/assets/page-css-list/cloud-auto.css --no-source-map",
-          "sass src/app/styles/relocation.scss apps/[APP_NAME]/.storybook/assets/page-css-list/relocation.css --no-source-map"
+          "sass --load-path=node_modules --load-path=libs/blueprint/styles --load-path=libs/vra-forms/styles apps/provisioning-ui-classic/src/styles.scss [PROJECT_PATH]/.storybook/assets/page-css-list/provisioning-ui.css --no-source-map",
+          "sass --load-path=node_modules --load-path=libs/blueprint/styles --load-path=libs/vra-forms/styles apps/cloud-automation-ui/src/styles.scss [PROJECT_PATH]/.storybook/assets/page-css-list/cloud-auto.css --no-source-map",
+          "sass --load-path=node_modules --load-path=libs/blueprint/styles --load-path=libs/vra-forms/styles apps/relocation-ui-classic/src/styles.scss [PROJECT_PATH]/.storybook/assets/page-css-list/relocation.css --no-source-map"
         ],
         "parallel": true
       }
@@ -126,7 +151,7 @@ export default config;
         "port": [UNIQUE_PORT],
         "tsConfig": "apps/[APP_NAME]/.storybook/tsconfig.json",
         "configDir": "apps/[APP_NAME]/.storybook",
-        "browserTarget": "storybook-project:build",
+        "browserTarget": "[PROJECT_NAME]:storybook",
         "compodoc": false,
         "styles": ["apps/[APP_NAME]/.storybook/styles.scss"]
       },
@@ -143,7 +168,7 @@ export default config;
       "options": {
         "tsConfig": "apps/[APP_NAME]/.storybook/tsconfig.json",
         "configDir": "apps/[APP_NAME]/.storybook", 
-        "browserTarget": "storybook-project:build",
+        "browserTarget": "[PROJECT_NAME]:build-storybook",
         "compodoc": false,
         "styles": ["apps/[APP_NAME]/.storybook/styles.scss"],
         "outputDir": "dist/storybook/[APP_NAME]"
@@ -166,9 +191,9 @@ export default config;
       "executor": "nx:run-commands",
       "options": {
         "commands": [
-          "sass src/app/styles/provisioning-ui.scss libs/[LIB_PATH]/.storybook/assets/page-css-list/provisioning-ui.css --no-source-map",
-          "sass src/app/styles/cloud-auto.scss libs/[LIB_PATH]/.storybook/assets/page-css-list/cloud-auto.css --no-source-map",
-          "sass src/app/styles/relocation.scss libs/[LIB_PATH]/.storybook/assets/page-css-list/relocation.css --no-source-map"
+          "sass --load-path=node_modules --load-path=libs/blueprint/styles --load-path=libs/vra-forms/styles apps/provisioning-ui-classic/src/styles.scss [PROJECT_PATH]/.storybook/assets/page-css-list/provisioning-ui.css --no-source-map",
+          "sass --load-path=node_modules --load-path=libs/blueprint/styles --load-path=libs/vra-forms/styles apps/cloud-automation-ui/src/styles.scss [PROJECT_PATH]/.storybook/assets/page-css-list/cloud-auto.css --no-source-map",
+          "sass --load-path=node_modules --load-path=libs/blueprint/styles --load-path=libs/vra-forms/styles apps/relocation-ui-classic/src/styles.scss [PROJECT_PATH]/.storybook/assets/page-css-list/relocation.css --no-source-map"
         ],
         "parallel": true
       }
@@ -180,7 +205,7 @@ export default config;
         "port": [UNIQUE_PORT],
         "tsConfig": "libs/[LIB_PATH]/.storybook/tsconfig.json",
         "configDir": "libs/[LIB_PATH]/.storybook",
-        "browserTarget": "storybook-project:build",
+        "browserTarget": "[PROJECT_NAME]:storybook",
         "compodoc": false,
         "styles": ["libs/[LIB_PATH]/.storybook/styles.scss"]
       },
@@ -197,7 +222,7 @@ export default config;
       "options": {
         "tsConfig": "libs/[LIB_PATH]/.storybook/tsconfig.json",
         "configDir": "libs/[LIB_PATH]/.storybook",
-        "browserTarget": "storybook-project:build",
+        "browserTarget": "[PROJECT_NAME]:build-storybook",
         "compodoc": false,
         "styles": ["libs/[LIB_PATH]/.storybook/styles.scss"],
         "outputDir": "dist/storybook/[LIB_NAME]"
@@ -225,9 +250,9 @@ Add storybook reference to main tsconfig.json:
 }
 ```
 
-### Step 5: Update Package.json Scripts
+### Step 5: Update Package.json Scripts (Optional)
 
-Add to root package.json:
+**Only if root package.json exists**, add the following scripts:
 ```json
 {
   "scripts": {
@@ -237,6 +262,10 @@ Add to root package.json:
 }
 ```
 
+**Skip this step if:**
+- No package.json file exists in the workspace root
+- Root package.json is not present or accessible
+
 ## Port Assignment Strategy
 
 Automatically assign ports based on project type:
@@ -244,20 +273,68 @@ Automatically assign ports based on project type:
 - Libraries: Start from 4400, increment by 1  
 - Existing ports: my-login-app should use 6007
 
+## SASS Commands Configuration
+
+The compile-scss target uses three predefined SASS commands that compile specific stylesheets. The output directory is dynamically configured using the [PROJECT_PATH] placeholder.
+
+### SASS Commands Template
+The three fixed commands compile styles from specific applications to the target project's .storybook directory:
+
+```bash
+"sass --load-path=node_modules --load-path=libs/blueprint/styles --load-path=libs/vra-forms/styles apps/provisioning-ui-classic/src/styles.scss [PROJECT_PATH]/.storybook/assets/page-css-list/provisioning-ui.css --no-source-map"
+
+"sass --load-path=node_modules --load-path=libs/blueprint/styles --load-path=libs/vra-forms/styles apps/cloud-automation-ui/src/styles.scss [PROJECT_PATH]/.storybook/assets/page-css-list/cloud-auto.css --no-source-map"
+
+"sass --load-path=node_modules --load-path=libs/blueprint/styles --load-path=libs/vra-forms/styles apps/relocation-ui-classic/src/styles.scss [PROJECT_PATH]/.storybook/assets/page-css-list/relocation.css --no-source-map"
+```
+
+### Example Output
+For `apps/card-app`, the [PROJECT_PATH] will be replaced with `apps/card-app`:
+```bash
+"sass --load-path=node_modules --load-path=libs/blueprint/styles --load-path=libs/vra-forms/styles apps/provisioning-ui-classic/src/styles.scss apps/card-app/.storybook/assets/page-css-list/provisioning-ui.css --no-source-map"
+```
+
 ## Automation Rules
 
-1. **Always replace placeholders**: [APP_NAME], [LIB_PATH], [LIB_NAME], [PROJECT_NAME], [UNIQUE_PORT]
+1. **Always replace placeholders**: [APP_NAME], [LIB_PATH], [LIB_NAME], [PROJECT_NAME], [PROJECT_PATH], [UNIQUE_PORT], [CALCULATED_RELATIVE_PATH]
 2. **Detect project type**: Check if path starts with 'apps/' or 'libs/'
-3. **Use appropriate templates**: Apps vs Libraries have different configurations
-4. **Use import paths**: 
-   - main.ts: Apps use '../../../.storybook-base/main', Libraries use '../../../../.storybook-base/main'  
+3. **Calculate relative path dynamically**: 
+   ```typescript
+   // Implementation for path calculation
+   function calculateStorybookBasePath(projectPath: string): string {
+     // Remove leading/trailing slashes and split
+     const pathParts = projectPath.replace(/^\/+|\/+$/g, '').split('/');
+     
+     // Find .storybook directory index
+     const storybookIndex = pathParts.findIndex(part => part === '.storybook');
+     if (storybookIndex === -1) {
+       throw new Error('.storybook directory not found in path');
+     }
+     
+     // Calculate levels up (number of directories before .storybook)
+     const levelsUp = storybookIndex;
+     
+     // Generate relative path
+     return '../'.repeat(levelsUp) + '.storybook-base/main';
+   }
+   
+   // Examples:
+   // 'apps/card-app/.storybook' → '../../../.storybook-base/main'
+   // 'libs/public-ui/components/.storybook' → '../../../../.storybook-base/main'
+   // 'libs/shared/.storybook' → '../../../.storybook-base/main'
+   ```
+4. **Use appropriate templates**: Apps vs Libraries have different configurations
+5. **Dynamic import paths**: 
+   - main.ts: Use calculated relative path instead of hardcoded values
    - preview.ts: Use '@storybook-config' path mapping for basePreview import
-5. **Create assets directory**: Always create assets/page-css-list subdirectory for CSS files
-6. **Add compile-scss target**: Include for both apps and libraries with appropriate paths
-7. **Add dependsOn**: Ensure storybook targets depend on compile-scss
-8. **Ensure unique ports**: Check existing configurations to avoid conflicts
-9. **Create all files**: Don't ask for confirmation, create all necessary files
-10. **Update existing files**: Merge new configuration into existing project.json and tsconfig.json
+6. **Create assets directory**: Always create assets/page-css-list subdirectory for CSS files
+7. **Replace PROJECT_PATH placeholder**: In the three SASS commands, replace [PROJECT_PATH] with the actual project path
+8. **Add compile-scss target**: Include for both apps and libraries with the three predefined SASS commands
+9. **Add dependsOn**: Ensure storybook targets depend on compile-scss
+10. **Ensure unique ports**: Check existing configurations to avoid conflicts
+11. **Create all files**: Don't ask for confirmation, create all necessary files
+12. **Update existing files**: Merge new configuration into existing project.json and tsconfig.json
+13. **Check for root package.json**: Only update root package.json scripts if the file exists in workspace root
 
 ## Example Usage
 
@@ -265,12 +342,72 @@ User says: "Configure Storybook for my-login-app"
 
 Auto-execute:
 1. Create apps/my-login-app/.storybook/ directory and assets/page-css-list subdirectory
-2. Generate main.ts (with relative import), preview.ts (with @storybook-config import), tsconfig.json, styles.scss
-3. Update apps/my-login-app/project.json with compile-scss, storybook and build-storybook targets (port 6007)
-4. Add dependsOn: ["compile-scss"] to storybook targets
-5. Update apps/my-login-app/tsconfig.json with storybook reference
-6. Update root package.json with scripts
-7. Report completion with next steps
+2. Calculate relative path: 'apps/my-login-app/.storybook' → '../../../.storybook-base/main'
+3. Replace [PROJECT_PATH] placeholder with 'apps/my-login-app' in the three SASS commands
+4. Generate main.ts (with calculated relative import), preview.ts (with @storybook-config import), tsconfig.json, styles.scss
+5. Update apps/my-login-app/project.json with compile-scss (using three predefined SASS commands), storybook and build-storybook targets (port 6007)
+6. Add dependsOn: ["compile-scss"] to storybook targets
+7. Update apps/my-login-app/tsconfig.json with storybook reference
+8. Update root package.json with scripts (only if package.json exists in root)
+9. Report completion with next steps
+
+## Implementation Guide
+
+### Practical Path Calculation Implementation
+
+When implementing the Storybook setup, use this logic to calculate the correct relative path:
+
+```typescript
+// Practical implementation for immediate use
+function getStorybookBasePath(projectPath: string): string {
+  // Normalize the path and count directory levels
+  const cleanPath = projectPath.replace(/\/$/, ''); // Remove trailing slash
+  const segments = cleanPath.split('/').filter(Boolean);
+  
+  // For apps: apps/[name]/.storybook → 3 levels up
+  if (segments[0] === 'apps') {
+    return '../../../.storybook-base/main';
+  }
+  
+  // For libs: Count the actual depth
+  if (segments[0] === 'libs') {
+    // libs/[category]/[name]/.storybook → 4 levels up
+    // libs/[name]/.storybook → 3 levels up
+    const storybookIndex = segments.indexOf('.storybook');
+    const levelsUp = storybookIndex;
+    return '../'.repeat(levelsUp) + '.storybook-base/main';
+  }
+  
+  // Fallback: count directories before .storybook
+  const storybookIndex = segments.indexOf('.storybook');
+  const levelsUp = storybookIndex;
+  return '../'.repeat(levelsUp) + '.storybook-base/main';
+}
+
+// Usage examples:
+getStorybookBasePath('apps/card-app/.storybook')           // → '../../../.storybook-base/main'
+getStorybookBasePath('apps/my-login-app/.storybook')       // → '../../../.storybook-base/main'
+getStorybookBasePath('libs/public-ui/components/.storybook') // → '../../../../.storybook-base/main'
+getStorybookBasePath('libs/shared/.storybook')            // → '../../../.storybook-base/main'
+```
+
+### Updated Template with Dynamic Path
+
+**For any project configuration:**
+```typescript
+// [PROJECT_PATH]/.storybook/main.ts
+import type { StorybookConfig } from '@storybook/angular';
+import baseConfig from '${getStorybookBasePath(PROJECT_PATH)}';
+
+const config: StorybookConfig = {
+  ...baseConfig,
+  stories: ['../src/**/*.stories.@(ts|js|mdx)'], // Apps
+  // OR
+  stories: ['../src/lib/**/*.mdx', '../src/lib/**/*.stories.@(ts|js)'], // Libs
+};
+
+export default config;
+```
 
 ## Test Commands
 
