@@ -19,10 +19,181 @@ Automatically detect and extract:
 3. **Interactive elements** - buttons, inputs, forms
 4. **Component dependencies** - imports and providers
 5. **Component type** - form, display, interactive, etc.
+6. **Standalone status** - check if component is standalone or requires module imports
+7. **Service dependencies** - analyze constructor and identify required services
+8. **Translation usage** - detect *transloco="let t" and t() calls in template
 
-### Step 2: Story Structure Generation
+### Step 2: Non-Standalone Component Setup
 
-#### Base Story Template
+#### Component Type Detection
+```typescript
+// Detect if component is standalone
+const isStandalone = componentMetadata.standalone !== false;
+
+// For non-standalone components, analyze required modules
+if (!isStandalone) {
+  // 1. Identify required Angular modules (CommonModule, ReactiveFormsModule, etc.)
+  // 2. Identify required third-party modules (ClarityModule, TranslocoModule, etc.)
+  // 3. Identify dependent components that need to be declared
+}
+```
+
+#### Service Dependency Analysis
+```typescript
+// Analyze constructor parameters to identify service dependencies
+const serviceDependencies = analyzeConstructorDependencies(component);
+
+// Check .storybook-base/preview.ts for existing providers
+const existingProviders = parsePreviewProviders('.storybook-base/preview.ts');
+
+// Determine which services need mocking
+const servicesToMock = serviceDependencies.filter(service => 
+  !existingProviders.includes(service) && isGlobalSingleton(service)
+);
+```
+
+#### Mock Service Generation (if needed)
+For services not provided in preview.ts, create mock classes:
+
+**Create .storybook-base/mock/[service-name].mock.ts:**
+```typescript
+// Example: .storybook-base/mock/format-service.mock.ts
+export class MockFormatService {
+  dateToAge(date: Date): string {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 60) return `${diffMins}m`;
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h`;
+    return `${Math.floor(diffMins / 1440)}d`;
+  }
+  
+  // Add other required methods based on component usage
+}
+```
+
+**Update .storybook-base/mock/index.ts:**
+```typescript
+export { MockFormatService } from './format-service.mock';
+export { MockTranslocoService } from './transloco-service.mock';
+// Export all mock services
+```
+
+**Update .storybook-base/preview.ts providers:**
+```typescript
+import { MockFormatService } from './mock';
+
+const basePreview: Preview = {
+  decorators: [
+    applicationConfig({
+      providers: [
+        importProvidersFrom(BrowserAnimationsModule),
+        importProvidersFrom(ClarityModule),
+        // Add mock services as needed
+        { provide: FormatService, useClass: MockFormatService },
+        { provide: TranslocoService, useValue: mockTranslocoService },
+      ],
+    }),
+    // ... existing decorators
+  ],
+};
+```
+
+### Step 3: Story Structure Generation
+
+#### Base Story Template for Non-Standalone Components (Optimized)
+```typescript
+import type { Meta, StoryObj } from '@storybook/angular';
+import { moduleMetadata } from '@storybook/angular';
+import { action } from '@storybook/addon-actions';
+import { userEvent, within, expect } from '@storybook/test';
+
+// Component and dependencies
+import { [COMPONENT_NAME] } from './[component-file-name]';
+import { CommonModule } from '@angular/common';
+import { [REQUIRED_MODULES] } from '[module-paths]';
+import { [DEPENDENT_COMPONENTS] } from '[component-paths]';
+
+const meta: Meta<[COMPONENT_NAME]> = {
+  title: 'Components/[COMPONENT_NAME]',
+  component: [COMPONENT_NAME],
+  decorators: [
+    moduleMetadata({
+      imports: [
+        CommonModule,
+        [REQUIRED_MODULES] // ClarityModule, TranslocoModule, etc.
+      ],
+      declarations: [
+        [COMPONENT_NAME],
+        [DEPENDENT_COMPONENTS] // FilterInputComponent, etc.
+      ],
+    }),
+    // ✅ Define common template in decorator to avoid repetition
+    (storyFn) => {
+      const story = storyFn();
+      return {
+        ...story,
+        template: `
+          <[COMPONENT_SELECTOR]
+            [GENERATED_INPUT_BINDINGS]
+            [GENERATED_OUTPUT_BINDINGS]>
+          </[COMPONENT_SELECTOR]>
+        `,
+      };
+    },
+  ],
+  parameters: {
+    layout: 'padded',
+    docs: {
+      description: {
+        component: '[AUTO_GENERATED_DESCRIPTION]'
+      }
+    }
+  },
+  tags: ['autodocs'],
+  argTypes: {
+    [AUTO_GENERATED_ARG_TYPES]
+  },
+  args: {
+    [AUTO_GENERATED_DEFAULT_ARGS]
+  }
+};
+
+export default meta;
+type Story = StoryObj<[COMPONENT_NAME]>;
+
+// ✅ Most stories only need args (no render function)
+export const Default: Story = {
+  args: {
+    [DEFAULT_ARGS]
+  },
+  play: async ({ canvasElement }) => {
+    // Story interactions
+  }
+};
+
+// ✅ For stories needing custom templates, override with render function
+export const CustomLayoutStory: Story = {
+  args: {
+    [CUSTOM_ARGS]
+  },
+  render: (args) => ({
+    props: args,
+    template: `
+      <div class="custom-wrapper">
+        <p>Custom context description</p>
+        <[COMPONENT_SELECTOR] [BINDINGS]></[COMPONENT_SELECTOR]>
+      </div>
+    `,
+  }),
+  play: async ({ canvasElement }) => {
+    // Custom interactions
+  }
+};
+```
+
+#### Base Story Template for Standalone Components (Optimized)
 ```typescript
 import type { Meta, StoryObj } from '@storybook/angular';
 import { action } from '@storybook/addon-actions';
@@ -30,8 +201,23 @@ import { userEvent, within, expect } from '@storybook/test';
 import { [COMPONENT_NAME] } from './[component-file-name]';
 
 const meta: Meta<[COMPONENT_NAME]> = {
-  title: '[APP_NAME]/[COMPONENT_CATEGORY]/[COMPONENT_NAME]',
+  title: 'Components/[COMPONENT_NAME]',
   component: [COMPONENT_NAME],
+  decorators: [
+    // ✅ Define common template in decorator for standalone components too
+    (storyFn) => {
+      const story = storyFn();
+      return {
+        ...story,
+        template: `
+          <[COMPONENT_SELECTOR]
+            [GENERATED_INPUT_BINDINGS]
+            [GENERATED_OUTPUT_BINDINGS]>
+          </[COMPONENT_SELECTOR]>
+        `,
+      };
+    },
+  ],
   parameters: {
     layout: 'centered',
     docs: {
@@ -52,11 +238,71 @@ const meta: Meta<[COMPONENT_NAME]> = {
 export default meta;
 type Story = StoryObj<[COMPONENT_NAME]>;
 
-// Base Default Story
+// ✅ Most stories only need args (clean and simple)
 export const Default: Story = {
   args: {
     [DEFAULT_PROP_VALUES]
+  },
+  play: async ({ canvasElement }) => {
+    // Story interactions
   }
+};
+```
+
+### Step 4: Input/Output Args Synchronization
+
+#### Ensure Args Match Component Interface
+```typescript
+// AUTO-GENERATE args based on @Input() and @Output() properties
+// For @Input() properties - create matching args with appropriate default values
+// For @Output() events - create action handlers in args
+
+interface ComponentInterface {
+  // Extract from component TypeScript interface
+  [INPUT_PROPERTY]: [INPUT_TYPE];
+  [OUTPUT_EVENT]: EventEmitter<[OUTPUT_TYPE]>;
+}
+
+// Generate corresponding args
+const componentArgs = {
+  // Input properties with type-appropriate defaults
+  [INPUT_PROPERTY]: [MOCK_DEFAULT_VALUE], // Matching the input type
+  
+  // Output events with action handlers
+  [OUTPUT_EVENT]: action('[output-event-name]'),
+};
+```
+
+#### Mock Data Generation Rules
+```typescript
+// Generate realistic mock data matching component data types
+const mockDataGenerator = {
+  // For complex objects, create realistic structures
+  'Observable<NsEvent[]>': () => of([
+    {
+      eventType: 'Normal',
+      reason: 'Started',
+      createdOn: new Date(Date.now() - 5 * 60 * 1000),
+      from: 'kubelet',
+      message: 'Started container web-app',
+      name: 'web-app-pod',
+      namespace: 'default',
+      type: 'Normal',
+      uid: 'event-001',
+    }
+  ]),
+  
+  // For arrays, create multiple realistic items
+  'User[]': () => [
+    { id: 1, name: 'John Doe', email: 'john@example.com', role: 'admin' },
+    { id: 2, name: 'Jane Smith', email: 'jane@example.com', role: 'user' }
+  ],
+  
+  // For primitives, use realistic defaults
+  'string': () => 'Sample text',
+  'number': () => 42,
+  'boolean': () => false,
+  'Date': () => new Date()
 };
 ```
 
@@ -177,11 +423,13 @@ export const ButtonInteractions: Story = {
     const secondaryButton = buttons[1]; // Second button (if exists)
     
     // Test primary button
-    await userEvent.click(primaryButton);
-    await expect(primaryButton).toBeInTheDocument();
+    if (primaryButton instanceof HTMLButtonElement && !primaryButton.disabled) {
+      await userEvent.click(primaryButton);
+      await expect(primaryButton).toBeInTheDocument();
+    }
     
     // Test secondary button if exists
-    if (secondaryButton) {
+    if (secondaryButton instanceof HTMLButtonElement && !secondaryButton.disabled) {
       await userEvent.click(secondaryButton);
     }
     
@@ -189,6 +437,37 @@ export const ButtonInteractions: Story = {
     if (primaryButton.hasAttribute('disabled')) {
       await expect(primaryButton).toBeDisabled();
     }
+  }
+};
+
+export const TranslocoSafeInteractions: Story = {
+  ...Default,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // ✅ Correct - Use structural selectors for transloco content
+    const titleElement = canvasElement.querySelector('h4'); // Title by element type
+    await expect(titleElement).toBeInTheDocument();
+    await expect(titleElement?.textContent).toBeTruthy(); // Check content exists, don't check specific text
+    
+    // ✅ Correct - Use data-test-id with proper CSS selector
+    const dataGrid = canvasElement.querySelector('[data-test-id="event-list"]');
+    await expect(dataGrid).toBeInTheDocument();
+    
+    // ✅ Correct - Use semantic roles when available
+    const searchInput = canvas.getByRole('textbox'); // For filter input
+    if (searchInput instanceof HTMLInputElement) {
+      await userEvent.type(searchInput, 'test search');
+      await expect(searchInput).toHaveValue('test search');
+    }
+    
+    // ✅ Correct - Use element structure for Clarity components
+    const clarityDatagrid = canvasElement.querySelector('clr-datagrid');
+    await expect(clarityDatagrid).toBeInTheDocument();
+    
+    // ✅ Correct - Use column structure instead of translated text
+    const columns = canvasElement.querySelectorAll('clr-dg-column');
+    await expect(columns.length).toBeGreaterThan(0);
   }
 };
 
@@ -435,6 +714,155 @@ export const LoadingState: Story = {
 
 
 ## Auto-Generation Rules
+
+### Template Optimization Best Practices
+
+#### Common Template in Decorators
+When most stories use the same component template, define it in meta decorators to eliminate code duplication:
+
+```typescript
+// ✅ Best Practice - Template in decorator
+const meta: Meta<ComponentType> = {
+  decorators: [
+    moduleMetadata({ /* module config */ }),
+    (storyFn) => {
+      const story = storyFn();
+      return {
+        ...story,
+        template: `
+          <component-selector
+            [input1]="input1"
+            [input2]="input2"
+            (output1)="output1($event)"
+            (output2)="output2($event)">
+          </component-selector>
+        `,
+      };
+    },
+  ],
+  // ... other meta config
+};
+
+// Stories only need args (much cleaner)
+export const Default: Story = {
+  args: { input1: 'value', input2: false },
+};
+
+export const Variant: Story = {
+  args: { input1: 'different', input2: true },
+};
+
+// Override template only when needed
+export const CustomLayout: Story = {
+  args: { input1: 'custom', input2: false },
+  render: (args) => ({
+    props: args,
+    template: `
+      <div class="special-wrapper">
+        <component-selector [input1]="input1" [input2]="input2"></component-selector>
+      </div>
+    `,
+  }),
+};
+```
+
+#### Template Generation Logic
+```typescript
+// Auto-generate template bindings from component analysis
+function generateTemplate(component: ComponentAnalysis): string {
+  const inputs = component.inputs
+    .map(input => `[${input.name}]="${input.name}"`)
+    .join('\n            ');
+  
+  const outputs = component.outputs
+    .map(output => `(${output.name})="${output.name}($event)"`)
+    .join('\n            ');
+  
+  return `
+    <${component.selector}
+      ${inputs}
+      ${outputs}>
+    </${component.selector}>
+  `;
+}
+```
+
+### Non-Standalone Component Rules
+
+#### Module Detection and Import Logic
+```typescript
+// 1. Detect component standalone status
+const isStandalone = componentSource.includes('standalone: true') || 
+                   !componentSource.includes('standalone: false');
+
+// 2. For non-standalone components, identify required modules
+if (!isStandalone) {
+  const requiredModules = [];
+  
+  // Check for common Angular modules
+  if (templateHasDirectives(['*ngFor', '*ngIf', '*ngSwitch'])) {
+    requiredModules.push('CommonModule');
+  }
+  if (templateHasFormDirectives(['formControl', 'ngModel', 'formGroup'])) {
+    requiredModules.push('ReactiveFormsModule', 'FormsModule');
+  }
+  
+  // Check for Clarity UI usage
+  if (templateHasClarityComponents(['clr-', 'clr-datagrid', 'clr-modal'])) {
+    requiredModules.push('ClarityModule');
+  }
+  
+  // Check for Transloco usage
+  if (templateHasTransloco(['*transloco', 't('])) {
+    requiredModules.push('TranslocoModule');
+  }
+}
+```
+
+#### Service Dependency Injection
+```typescript
+// 1. Parse constructor dependencies
+const serviceDependencies = parseConstructorServices(componentSource);
+
+// 2. Check existing providers in .storybook-base/preview.ts
+const existingProviders = parseApplicationConfig('.storybook-base/preview.ts');
+
+// 3. Create mock services for missing dependencies
+serviceDependencies.forEach(service => {
+  if (!existingProviders.includes(service.name)) {
+    createMockService(service);
+    updatePreviewProviders(service);
+  }
+});
+
+// 4. Mock service creation pattern
+function createMockService(service) {
+  const mockFileName = `.storybook-base/mock/${service.kebabCase}.mock.ts`;
+  const mockClass = generateMockClass(service);
+  writeFile(mockFileName, mockClass);
+  updateMockIndex(service);
+}
+```
+
+#### Component Args Synchronization
+```typescript
+// Ensure args exactly match component @Input() and @Output() properties
+const componentInterface = parseComponentInterface(componentSource);
+
+const autoGeneratedArgs = {
+  // For each @Input() property
+  ...componentInterface.inputs.reduce((acc, input) => {
+    acc[input.name] = generateMockValue(input.type, input.name);
+    return acc;
+  }, {}),
+  
+  // For each @Output() event
+  ...componentInterface.outputs.reduce((acc, output) => {
+    acc[output.name] = action(output.name);
+    return acc;
+  }, {})
+};
+```
 
 ### HTML Template Analysis & Component Type Detection
 
@@ -825,6 +1253,39 @@ const mockUserData = {
 
 ## Code Quality Best Practices
 
+### Element Selection for Non-Standalone Components
+
+#### Transloco Text Content Selection
+For components using *transloco="let t" and t() function calls, avoid text-based selectors:
+
+```typescript
+// ❌ Bad - Don't use text content for transloco elements
+const title = canvas.getByText('Events List'); // This text is dynamic based on translation
+
+// ✅ Good - Use structural selectors instead
+const titleElement = canvasElement.querySelector('h4'); // Select by element type
+const titleElement = canvasElement.querySelector('[data-test-id="events-title"]'); // Use data attributes
+const titleElement = canvas.getByRole('heading', { level: 4 }); // Use semantic roles
+```
+
+#### Data Test ID Selection
+For elements with data-test-id attributes, use proper CSS selectors:
+
+```typescript
+// ❌ Bad - Wrong data attribute format
+const eventList = canvas.getByTestId('event-list'); // Looks for [data-testid="event-list"]
+
+// ✅ Good - Use CSS selector for custom data attributes
+const eventList = canvasElement.querySelector('[data-test-id="event-list"]'); // Matches data-test-id
+```
+
+#### Element Selection Priority Order
+1. **CSS Selectors for custom attributes**: `canvasElement.querySelector('[data-test-id="custom-id"]')`
+2. **Semantic roles**: `canvas.getByRole('button', { name: /submit/i })`
+3. **Form labels**: `canvas.getByLabelText(/username/i)`
+4. **Element structure**: `canvasElement.querySelector('clr-datagrid')`
+5. **Avoid text content**: Never use `getByText()` for transloco content
+
 ### Type Safety in Stories
 Always add type checks when interacting with DOM elements:
 
@@ -887,11 +1348,35 @@ if (button instanceof HTMLButtonElement && !button.disabled) {
 
 ### Storybook Syntax Corrections
 
-#### Decorator Function Calls
-Always call story functions in decorators:
+#### Decorator Function Calls and Template Optimization
+Always call story functions in decorators and use common templates to reduce duplication:
 
 ```typescript
-// ✅ Correct - call story() function (Method 1)
+// ✅ Best Practice - Common template in decorator (Recommended)
+decorators: [
+  moduleMetadata({ imports: [CommonModule] }),
+  (storyFn) => {
+    const story = storyFn();
+    return {
+      ...story,
+      template: `
+        <my-component
+          [prop1]="prop1"
+          [prop2]="prop2"
+          (event1)="event1($event)"
+          (event2)="event2($event)">
+        </my-component>
+      `,
+    };
+  },
+]
+
+// Stories become much cleaner
+export const Default: Story = {
+  args: { prop1: 'value', prop2: false },
+};
+
+// ✅ Correct - call story() function (Alternative Method)
 decorators: [
   (story) => ({
     template: `<div>${story().template}</div>`,
@@ -900,17 +1385,18 @@ decorators: [
   })
 ]
 
-// ✅ Correct - storyFn approach (Method 2)
-decorators: [
-  (storyFn) => {
-    const story = storyFn();
-    return {
-      ...story,
-      template: `<div>${story.template}</div>`,
-      props: { ...story.props }
-    }
-  }
-]
+// ✅ Override template only when needed
+export const CustomLayout: Story = {
+  args: { prop1: 'custom' },
+  render: (args) => ({
+    props: args,
+    template: `
+      <div class="wrapper">
+        <my-component [prop1]="prop1"></my-component>
+      </div>
+    `,
+  }),
+};
 
 // ❌ Incorrect - missing function calls
 decorators: [
@@ -919,6 +1405,21 @@ decorators: [
     props: story.props // Missing ()
   })
 ]
+
+// ❌ Inefficient - repetitive templates in every story
+export const Story1: Story = {
+  render: (args) => ({
+    props: args,
+    template: `<my-component [prop1]="prop1" [prop2]="prop2"></my-component>` // Repeated
+  })
+};
+
+export const Story2: Story = {
+  render: (args) => ({
+    props: args,
+    template: `<my-component [prop1]="prop1" [prop2]="prop2"></my-component>` // Repeated again
+  })
+};
 ```
 
 #### Action Configuration for Events
@@ -1024,4 +1525,4 @@ render: (args) => ({
 
 ---
 
-**Note**: This rule analyzes TypeScript component files and automatically generates comprehensive, interactive stories with proper controls, actions, and interaction tests using type-safe best practices.
+**Note**: This rule analyzes TypeScript component files and automatically generates comprehensive, interactive stories with proper controls, actions, and interaction tests using type-safe best practices. It provides full support for both standalone and non-standalone Angular components with proper module imports, service mocking, and transloco-safe element selection.
