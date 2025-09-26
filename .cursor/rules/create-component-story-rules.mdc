@@ -10,6 +10,10 @@ alwaysApply: false
 
 When user requests "Create story for [component-name]" or "Generate stories for [component-path]", automatically analyze the component and generate comprehensive stories.
 
+## 🚀 Angular 19 Compatibility
+
+**Important**: This rule is optimized for Angular 19, where components are **standalone by default**. A component is only considered non-standalone if it explicitly declares `standalone: false` in the component decorator.
+
 ## Analysis Steps
 
 ### Step 1: Component Analysis
@@ -19,16 +23,22 @@ Automatically detect and extract:
 3. **Interactive elements** - buttons, inputs, forms
 4. **Component dependencies** - imports and providers
 5. **Component type** - form, display, interactive, etc.
-6. **Standalone status** - check if component is standalone or requires module imports
+6. **Standalone status** - Angular 19 default is standalone, only non-standalone if `standalone: false` is explicitly declared
 7. **Service dependencies** - analyze constructor and identify required services
-8. **Translation usage** - detect *transloco="let t" and t() calls in template
+8. **Translation usage** - detect *transloco="let t" and t() calls in template, extract translation keys for stories parameters
 
 ### Step 2: Non-Standalone Component Setup
 
+> **Angular 19 Note**: This section only applies to components that explicitly declare `standalone: false`. By default, all Angular 19 components are standalone.
+
 #### Component Type Detection
 ```typescript
-// Detect if component is standalone
-const isStandalone = componentMetadata.standalone !== false;
+// ✅ Angular 19: Components are standalone by default
+// Only non-standalone if explicitly declared as standalone: false
+const isStandalone = !componentSource.includes('standalone: false');
+
+// Alternative detection method using component metadata
+const isStandaloneFromMetadata = componentMetadata.standalone !== false;
 
 // For non-standalone components, analyze required modules
 if (!isStandalone) {
@@ -100,6 +110,93 @@ const basePreview: Preview = {
 };
 ```
 
+#### Translation Key Analysis
+Analyze component template for transloco usage and extract translation keys:
+
+```typescript
+// Parse template for transloco usage patterns
+function analyzeTranslationKeys(templateContent: string): string[] {
+  const translationKeys: string[] = [];
+  
+  // Pattern 1: t('key') function calls
+  const tFunctionPattern = /t\(['"`](.*?)['"`]\)/g;
+  let match;
+  while ((match = tFunctionPattern.exec(templateContent)) !== null) {
+    translationKeys.push(match[1]);
+  }
+  
+  // Pattern 2: {{ t('key') }} in interpolation
+  const interpolationPattern = /\{\{\s*t\(['"`](.*?)['"`]\)\s*\}\}/g;
+  while ((match = interpolationPattern.exec(templateContent)) !== null) {
+    translationKeys.push(match[1]);
+  }
+  
+  // Pattern 3: [placeholder]="t('key')" in attributes
+  const attributePattern = /\[\w+\]=['"`].*?t\(['"`](.*?)['"`].*?['"`]/g;
+  while ((match = attributePattern.exec(templateContent)) !== null) {
+    translationKeys.push(match[1]);
+  }
+  
+  return [...new Set(translationKeys)]; // Remove duplicates
+}
+
+// ✅ Check if component uses transloco
+function hasTranslocoUsage(templateContent: string): boolean {
+  // Check for *transloco directive
+  const translocoDirectivePattern = /\*transloco\s*=\s*["']let\s+\w+["']/;
+  
+  // Check for t() function calls
+  const tFunctionPattern = /t\(['"`][^'"`]*['"`]\)/;
+  
+  return translocoDirectivePattern.test(templateContent) || tFunctionPattern.test(templateContent);
+}
+
+// Example usage:
+if (hasTranslocoUsage(templateContent)) {
+  const detectedKeys = analyzeTranslationKeys(templateContent);
+  // Generate translations only if transloco is used
+  const translations = generateTranslationParameters(detectedKeys);
+} else {
+  // No transloco usage - skip translation parameters
+  console.log('Component does not use transloco, skipping translation parameters');
+}
+```
+
+#### Auto-Generate Translation Parameters
+```typescript
+// Generate translation mappings for stories
+function generateTranslationParameters(translationKeys: string[]): Record<string, string> {
+  const translations: Record<string, string> = {};
+  
+  translationKeys.forEach(key => {
+    // Generate meaningful default translations based on key patterns
+    translations[key] = generateDefaultTranslation(key);
+  });
+  
+  return translations;
+}
+
+function generateDefaultTranslation(key: string): string {
+  const keyMappings: Record<string, string> = {
+    // Common patterns
+    'sdk.label.type': 'Type',
+    'sdk.label.reason': 'Reason',
+    'sdk.label.age': 'Age',
+    'sdk.label.from': 'Source',
+    'sdk.label.message': 'Message',
+    'sdk.text.filterPlaceholder': 'Filter...',
+    'sdk.text.noItemFoundContaining_value': 'No items found containing "{{value}}"',
+    
+    // Component-specific
+    'sdkUI.eventList.title': 'Events',
+    'sdkUI.eventList.datagrid.noEvents': 'No events found',
+    'sdkUI.eventList.datagrid.footer.eventList': 'Event list',
+  };
+  
+  return keyMappings[key] || key.split('.').pop() || key;
+}
+```
+
 ### Step 3: Story Structure Generation
 
 #### Base Story Template for Non-Standalone Components (Optimized)
@@ -135,23 +232,25 @@ const meta: Meta<[COMPONENT_NAME]> = {
       return {
         ...story,
         template: `
-          <[COMPONENT_SELECTOR]
-            [GENERATED_INPUT_BINDINGS]
-            [GENERATED_OUTPUT_BINDINGS]>
-          </[COMPONENT_SELECTOR]>
+          <div style="padding: 20px; max-width: 400px;">
+            <[COMPONENT_SELECTOR]
+              [GENERATED_INPUT_BINDINGS]
+              [GENERATED_OUTPUT_BINDINGS]>
+            </[COMPONENT_SELECTOR]>
+          </div>
         `,
       };
     },
   ],
   parameters: {
-    layout: 'padded',
+    layout: 'centered',
     docs: {
       description: {
         component: '[AUTO_GENERATED_DESCRIPTION]'
       }
-    }
+    }[CONDITIONAL_TRANSLATIONS_PARAMETER]
   },
-  tags: ['autodocs'],
+  // tags: ['autodocs'], // ✅ Commented out by default - can be enabled per project
   argTypes: {
     [AUTO_GENERATED_ARG_TYPES]
   },
@@ -169,7 +268,11 @@ export const Default: Story = {
     [DEFAULT_ARGS]
   },
   play: async ({ canvasElement }) => {
-    // Story interactions
+    // ✅ Use universal element selection best practices
+    const [MAIN_ELEMENT] = canvasElement.querySelector('[data-test-id="[COMPONENT_TEST_ID]"]');
+    await expect([MAIN_ELEMENT]).toBeInTheDocument();
+    
+    // [AUTO_GENERATED_ELEMENT_TESTS]
   }
 };
 
@@ -210,10 +313,12 @@ const meta: Meta<[COMPONENT_NAME]> = {
       return {
         ...story,
         template: `
-          <[COMPONENT_SELECTOR]
-            [GENERATED_INPUT_BINDINGS]
-            [GENERATED_OUTPUT_BINDINGS]>
-          </[COMPONENT_SELECTOR]>
+          <div style="padding: 20px; max-width: 400px;">
+            <[COMPONENT_SELECTOR]
+              [GENERATED_INPUT_BINDINGS]
+              [GENERATED_OUTPUT_BINDINGS]>
+            </[COMPONENT_SELECTOR]>
+          </div>
         `,
       };
     },
@@ -224,9 +329,9 @@ const meta: Meta<[COMPONENT_NAME]> = {
       description: {
         component: '[AUTO_GENERATED_DESCRIPTION]'
       }
-    }
+    }[CONDITIONAL_TRANSLATIONS_PARAMETER]
   },
-  tags: ['autodocs'],
+  // tags: ['autodocs'], // ✅ Commented out by default - can be enabled per project
   argTypes: {
     [AUTO_GENERATED_ARG_TYPES]
   },
@@ -244,7 +349,11 @@ export const Default: Story = {
     [DEFAULT_PROP_VALUES]
   },
   play: async ({ canvasElement }) => {
-    // Story interactions
+    // ✅ Use universal element selection best practices
+    const [MAIN_ELEMENT] = canvasElement.querySelector('[data-test-id="[COMPONENT_TEST_ID]"]');
+    await expect([MAIN_ELEMENT]).toBeInTheDocument();
+    
+    // [AUTO_GENERATED_ELEMENT_TESTS]
   }
 };
 ```
@@ -424,8 +533,8 @@ export const ButtonInteractions: Story = {
     
     // Test primary button
     if (primaryButton instanceof HTMLButtonElement && !primaryButton.disabled) {
-      await userEvent.click(primaryButton);
-      await expect(primaryButton).toBeInTheDocument();
+    await userEvent.click(primaryButton);
+    await expect(primaryButton).toBeInTheDocument();
     }
     
     // Test secondary button if exists
@@ -791,31 +900,58 @@ function generateTemplate(component: ComponentAnalysis): string {
 
 #### Module Detection and Import Logic
 ```typescript
-// 1. Detect component standalone status
-const isStandalone = componentSource.includes('standalone: true') || 
-                   !componentSource.includes('standalone: false');
+// ✅ Angular 19: Components are standalone by default
+// 1. Detect component standalone status - only non-standalone if explicitly declared
+const isStandalone = !componentSource.includes('standalone: false');
 
 // 2. For non-standalone components, identify required modules
 if (!isStandalone) {
-  const requiredModules = [];
+  const requiredModules = ['CommonModule']; // Always include CommonModule
   
-  // Check for common Angular modules
-  if (templateHasDirectives(['*ngFor', '*ngIf', '*ngSwitch'])) {
-    requiredModules.push('CommonModule');
-  }
-  if (templateHasFormDirectives(['formControl', 'ngModel', 'formGroup'])) {
-    requiredModules.push('ReactiveFormsModule', 'FormsModule');
-  }
-  
-  // Check for Clarity UI usage
-  if (templateHasClarityComponents(['clr-', 'clr-datagrid', 'clr-modal'])) {
+  // Check for Clarity UI usage (most common in this project)
+  if (templateHasClarityComponents(['clr-', 'cds-icon', 'clr-input'])) {
     requiredModules.push('ClarityModule');
   }
   
-  // Check for Transloco usage
+  // ✅ Check for Transloco usage - use project mock system
   if (templateHasTransloco(['*transloco', 't('])) {
+    // Don't add direct TranslocoModule - use project's SdkI18nModule
     requiredModules.push('TranslocoModule');
+    
   }
+  
+  // Check for form directives
+  if (templateHasFormDirectives(['formControl', 'ngModel', 'formGroup'])) {
+    requiredModules.push('ReactiveFormsModule', 'FormsModule');
+  }
+}
+
+// ✅ Path calculation utility
+function calculateRelativePathToStorybookBase(componentPath: string): string {
+  // From component path to project root, then to .storybook-base
+  const depth = componentPath.split('/').length - 1;
+  const upLevels = '../'.repeat(depth);
+  return `${upLevels}.storybook-base`;
+}
+
+// ✅ Enhanced template analysis
+function templateHasTransloco(templateContent: string): boolean {
+  const patterns = [
+    /\*transloco\s*=\s*["']let\s+\w+["']/,  // *transloco="let t"
+    /t\(['"`][^'"`]*['"`]\)/,               // t('key')
+    /\{\{\s*.*t\(['"`][^'"`]*['"`]\).*\}\}/ // {{ t('key') }}
+  ];
+  return patterns.some(pattern => pattern.test(templateContent));
+}
+
+function templateHasClarityComponents(templateContent: string): boolean {
+  const clarityPatterns = [
+    /<clr-\w+/,           // <clr-button>, <clr-input>, etc.
+    /<cds-icon/,          // <cds-icon>
+    /clr\w+/,             // clrButton directive
+    /\[clr-\w+\]/         // [clr-modal-trigger]
+  ];
+  return clarityPatterns.some(pattern => pattern.test(templateContent));
 }
 ```
 
@@ -862,6 +998,44 @@ const autoGeneratedArgs = {
     return acc;
   }, {})
 };
+```
+
+#### Translation Parameters Generation
+```typescript
+// Auto-generate translation parameters based on template analysis
+function generateStoryParameters(componentTemplate: string): { translations?: Record<string, string> } {
+  if (!hasTranslocoUsage(componentTemplate)) {
+    // ✅ No transloco usage - return empty parameters
+    return {};
+  }
+  
+  // Component uses transloco - generate translation parameters
+  const translationKeys = analyzeTranslationKeys(componentTemplate);
+  const translations: Record<string, string> = {};
+  
+  translationKeys.forEach(key => {
+    translations[key] = generateDefaultTranslation(key);
+  });
+  
+  return { translations };
+}
+
+// Conditional parameter generation
+function generateParametersSection(componentTemplate: string): string {
+  if (hasTranslocoUsage(componentTemplate)) {
+    return `,
+    // ✅ Auto-generated translations based on template analysis
+    translations: {
+      [AUTO_GENERATED_TRANSLATIONS]
+    }`;
+  }
+  
+  return ''; // No translations parameter needed
+}
+
+// Integration with existing preview.ts architecture:
+// - If translations exist: context.parameters['translations'] → mockTranslocoService.addTranslations()
+// - If no translations: MockTranslocoService uses default empty state
 ```
 
 ### HTML Template Analysis & Component Type Detection
@@ -1253,23 +1427,12 @@ const mockUserData = {
 
 ## Code Quality Best Practices
 
-### Element Selection for Non-Standalone Components
+### Universal Element Selection Best Practices
 
-#### Transloco Text Content Selection
-For components using *transloco="let t" and t() function calls, avoid text-based selectors:
-
-```typescript
-// ❌ Bad - Don't use text content for transloco elements
-const title = canvas.getByText('Events List'); // This text is dynamic based on translation
-
-// ✅ Good - Use structural selectors instead
-const titleElement = canvasElement.querySelector('h4'); // Select by element type
-const titleElement = canvasElement.querySelector('[data-test-id="events-title"]'); // Use data attributes
-const titleElement = canvas.getByRole('heading', { level: 4 }); // Use semantic roles
-```
+These element selection guidelines apply to **all components** (both standalone and non-standalone):
 
 #### Data Test ID Selection
-For elements with data-test-id attributes, use proper CSS selectors:
+For elements with `data-test-id` attributes, use proper CSS selectors:
 
 ```typescript
 // ❌ Bad - Wrong data attribute format
@@ -1286,6 +1449,43 @@ const eventList = canvasElement.querySelector('[data-test-id="event-list"]'); //
 4. **Element structure**: `canvasElement.querySelector('clr-datagrid')`
 5. **Avoid text content**: Never use `getByText()` for transloco content
 
+#### Common Element Selection Examples
+```typescript
+// ✅ Data test IDs (preferred for reliability)
+const filterInput = canvasElement.querySelector('[data-test-id="cci-filter-input"]');
+const addButton = canvasElement.querySelector('[data-test-id="add-btn"]');
+const listItem = canvasElement.querySelector('[data-test-id="list-item"]');
+
+// ✅ Semantic roles (good for accessibility testing)
+const button = canvas.getByRole('button');
+const textbox = canvas.getByRole('textbox');
+const heading = canvas.getByRole('heading', { level: 2 });
+
+// ✅ Form elements (when associated with labels)
+const emailInput = canvas.getByLabelText(/email/i);
+const passwordInput = canvas.getByLabelText(/password/i);
+
+// ✅ Element structure (for library components)
+const clarityModal = canvasElement.querySelector('clr-modal');
+const clarityDatagrid = canvasElement.querySelector('clr-datagrid');
+const cdsIcon = canvasElement.querySelector('cds-icon[shape="search"]');
+```
+
+### Element Selection for Non-Standalone Components
+
+#### Transloco Text Content Selection
+For components using *transloco="let t" and t() function calls, avoid text-based selectors:
+
+```typescript
+// ❌ Bad - Don't use text content for transloco elements
+const title = canvas.getByText('Events List'); // This text is dynamic based on translation
+
+// ✅ Good - Use structural selectors instead
+const titleElement = canvasElement.querySelector('h4'); // Select by element type
+const titleElement = canvasElement.querySelector('[data-test-id="events-title"]'); // Use data attributes
+const titleElement = canvas.getByRole('heading', { level: 4 }); // Use semantic roles
+```
+
 ### Type Safety in Stories
 Always add type checks when interacting with DOM elements:
 
@@ -1301,6 +1501,164 @@ const button = canvas.getByRole('button');
 if (!button.disabled) {
   await userEvent.click(button);
 }
+```
+
+## Translation Best Practices
+
+### Translation Parameters Integration
+
+The `.storybook-base/preview.ts` already includes a decorator that automatically applies translation parameters:
+
+```typescript
+// preview.ts decorator automatically handles this
+const translocoService = mockTranslocoService;
+translocoService.setActiveLang(context.globals['language']);
+if (context.parameters['translations']) {
+  translocoService.addTranslations(context.parameters['translations']);
+}
+```
+
+**Workflow:**
+1. **Template Analysis**: Parse component template for `*transloco` directive and `t('key')` patterns
+2. **Conditional Check**: Only proceed if transloco usage is detected
+3. **Auto-Generate**: Create `parameters.translations` mapping (only if needed)
+4. **Global Integration**: Preview.ts automatically applies translations to MockTranslocoService
+5. **Language Support**: Global toolbar allows switching between `en`, `fr`, `es`
+
+### Translation Key Detection Patterns
+```typescript
+// Supported patterns for automatic detection:
+*transloco="let t"                           // ✅ Transloco directive  
+{{ t('sdk.label.type') }}                    // ✅ Interpolation
+[placeholder]="t('sdk.text.placeholder')"    // ✅ Attribute binding  
+<h4>{{ t('sdkUI.eventList.title') }}</h4>    // ✅ Element content
+*ngIf="items.length === 0" {{ t('sdk.text.noItems') }}  // ✅ Conditional
+{{ placeholder || t('sdk.text.filterPlaceholder') }}    // ✅ Fallback pattern
+```
+
+### Translation Testing Best Practices
+
+#### MockTranslocoService Language Suffix Handling
+```typescript
+// ⚠️ Important: MockTranslocoService automatically adds language suffixes
+// - English: "Filter..." → "Filter... [EN]"  
+// - French: "Filter..." → "Filter... [FR]"
+// - Spanish: "Filter..." → "Filter... [ES]"
+
+// ✅ Flexible testing for translated content
+export const Default: Story = {
+  args: { placeholder: '' }, // Empty - triggers translation
+  play: async ({ canvasElement }) => {
+    const input = canvasElement.querySelector('[data-test-id="input"]');
+    if (input instanceof HTMLInputElement) {
+      const placeholder = input.getAttribute('placeholder');
+      // Use regex to handle language suffix
+      await expect(placeholder).toMatch(/^Filter\.\.\./);
+    }
+  }
+};
+
+// ✅ Exact testing for custom content  
+export const WithCustomPlaceholder: Story = {
+  args: { placeholder: 'Search products...' }, // Custom - no translation
+  play: async ({ canvasElement }) => {
+    const input = canvasElement.querySelector('[data-test-id="input"]');
+    if (input instanceof HTMLInputElement) {
+      // Custom values are used exactly as provided
+      await expect(input).toHaveAttribute('placeholder', 'Search products...');
+    }
+  }
+};
+```
+
+#### Conditional Logic in Templates
+```typescript
+// Template pattern: {{ placeholder || t('translation.key') }}
+// Logic: If placeholder exists → use it, else → call translation
+
+function generateTranslationTestStrategy(templateContent: string): string {
+  const hasFallbackPattern = /\{\{\s*\w+\s*\|\|\s*t\(['"`][^'"`]*['"`]\)\s*\}\}/.test(templateContent);
+  
+  if (hasFallbackPattern) {
+    return `
+    // ✅ Test both translation and custom value scenarios
+    
+    // Translation scenario (empty custom value)
+    const placeholder = input.getAttribute('placeholder');
+    await expect(placeholder).toMatch(/^[EXPECTED_TRANSLATION]/);
+    
+    // Custom value scenario (provided custom value)  
+    await expect(input).toHaveAttribute('placeholder', '[CUSTOM_VALUE]');
+    `;
+  }
+  
+  return `
+    // ✅ Direct translation testing
+    await expect(element).toHaveTextContent(/^[EXPECTED_TRANSLATION]/);
+  `;
+}
+```
+
+### Components Without Transloco
+```typescript
+// Example: Simple component with no internationalization
+// Template: <button>{{ label }}</button>
+// Result: No parameters.translations generated
+
+const meta: Meta<SimpleButtonComponent> = {
+  title: 'Components/SimpleButton',
+  component: SimpleButtonComponent,
+  parameters: {
+    layout: 'centered',
+    docs: {
+      description: {
+        component: 'Simple button component with no translations'
+      }
+    }
+    // ✅ No translations parameter - component doesn't use transloco
+  },
+  // ... rest of configuration
+};
+```
+
+### Story-Specific Translation Overrides
+```typescript
+// Individual stories can override or extend translations
+export const CustomTranslations: StoryObj<MyComponent> = {
+  args: { /* ... */ },
+  parameters: {
+    translations: {
+      // Extend base translations
+      'sdk.label.customField': 'Custom Field Label',
+      'component.specific.message': 'Component-specific message'
+    }
+  }
+};
+```
+
+### Multi-Language Testing Strategy
+```typescript
+// Language-specific stories for comprehensive testing
+export const EnglishDefault: StoryObj<MyComponent> = {
+  args: { /* ... */ },
+  parameters: { translations: baseTranslations }
+};
+
+export const FrenchLocalization: StoryObj<MyComponent> = {
+  args: { /* ... */ },
+  parameters: { 
+    translations: {
+      ...baseTranslations,
+      'sdk.label.type': 'Type',  // MockTranslocoService will auto-append [FR] when language is 'fr'
+      'sdk.label.status': 'Statut'
+    }
+  },
+  play: async ({ canvasElement }) => {
+    // Verify French translations appear correctly with [FR] suffix
+    const typeLabel = canvasElement.querySelector('[data-test-id="type-label"]');
+    await expect(typeLabel).toHaveTextContent(/Type \[FR\]/);
+  }
+};
 ```
 
 ### Element Selection Best Practices
@@ -1522,7 +1880,21 @@ render: (args) => ({
   // Missing moduleMetadata
 })
 ```
+## Complete Translation Integration Example
+
+
+### Project-Specific Optimizations
+
+1. **Dependency Management**: Always use project's mock system instead of external packages
+2. **Layout Consistency**: Standardize wrapper styles and layout parameters
+3. **Test Robustness**: Handle MockTranslocoService language suffixes gracefully
+4. **Path Calculation**: Automate relative path calculation for consistent imports
+5. **Documentation Control**: Comment out autodocs by default, enable per project needs
+6. **Element Selection**: Prioritize `[data-test-id]` for transloco-safe testing
+7. **Story Structure**: Limit to 5 focused stories covering key scenarios
+8. **Type Safety**: Always include type guards for DOM element interactions
+9. **Universal Element Selection**: Use consistent element selection patterns for both standalone and non-standalone components
 
 ---
 
-**Note**: This rule analyzes TypeScript component files and automatically generates comprehensive, interactive stories with proper controls, actions, and interaction tests using type-safe best practices. It provides full support for both standalone and non-standalone Angular components with proper module imports, service mocking, and transloco-safe element selection.
+**Note**: This rule analyzes TypeScript component files and automatically generates comprehensive, interactive stories with proper controls, actions, and interaction tests using type-safe best practices. Optimized for **Angular 19** where components are standalone by default, it provides full support for both standalone (default) and non-standalone (explicitly declared `standalone: false`) Angular components with proper module imports, service mocking, transloco-safe element selection, and conditional translation parameter generation (only when components actually use transloco).
