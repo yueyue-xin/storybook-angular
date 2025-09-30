@@ -1,0 +1,203 @@
+---
+description: "Fix common issues in Storybook interactions for Angular components"
+globs: ["**/*.stories.ts"]
+alwaysApply: false
+---
+
+# 🔧 Storybook Interactions Fix Rules
+
+## Auto-Fix Trigger
+
+When user requests "Fix storybook interactions" or "Correct story interactions", automatically analyze and fix common interaction issues in stories.
+
+## 🎯 Common Issues and Fixes
+
+### 1. Transloco Text Selection Issues
+
+**Problem**: Hard-coded text matching fails with dynamic translations
+**Solution**: Use regex patterns for flexible text matching
+
+```typescript
+// ❌ Fragile - Exact text match
+const label = canvas.getByText('Storage Class');
+const button = canvas.getByText('Submit');
+const title = canvas.getByText('Configuration');
+
+// ✅ Robust - Regex pattern match
+const label = canvas.getByText(/Storage Class/);
+const button = canvas.getByText(/Submit/);
+const title = canvas.getByText(/Configuration/);
+```
+
+**Detection Pattern**: 
+```typescript
+// Find: canvas.getByText('exact-text')
+// Replace: canvas.getByText(/exact-text/)
+```
+
+### 2. Angular ngValue Selection Issues
+
+**Problem**: DOM value property doesn't work with `[ngValue]` object bindings
+**Solution**: Use `selectedIndex` to access selected option
+
+```typescript
+// ❌ Incorrect - DOM value is unreliable with ngValue
+await userEvent.selectOptions(selectElement, 'option-value');
+await expect(selectElement.value).toBe('expected-value');
+
+// ✅ Correct - Use selectedIndex for ngValue
+await userEvent.selectOptions(selectElement, 'option-value');
+const selectedOption = selectElement.options[selectElement.selectedIndex];
+await expect(selectedOption.textContent?.trim()).toBe('expected-value');
+```
+
+**Detection Pattern**:
+```typescript
+// Find: selectElement.value or select.value
+// Replace: selectElement.options[selectElement.selectedIndex]
+```
+
+### 3. Option Selection Best Practices
+
+```typescript
+// ✅ Complete ngValue selection pattern
+export const InteractiveSelection: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const selectElement = canvasElement.querySelector('[data-test-id="select"]') as HTMLSelectElement;
+    
+    // Select option by text content
+    await userEvent.selectOptions(selectElement, 'option-text');
+    
+    // Verify selection using selectedIndex
+    const selectedOption = selectElement.options[selectElement.selectedIndex];
+    await expect(selectedOption).toBeDefined();
+    await expect(selectedOption.textContent?.trim()).toBe('option-text');
+    
+    // For ngValue objects, verify the bound value indirectly
+    await expect(selectedOption.selected).toBe(true);
+  }
+};
+```
+
+## 🔍 Auto-Fix Patterns
+
+### Pattern 1: Text Selection Fix
+```typescript
+// Detection regex: canvas\.getByText\(['"`]([^'"`]+)['"`]\)
+// Replacement: canvas.getByText(/$1/)
+
+function fixTextSelection(code: string): string {
+  return code.replace(
+    /canvas\.getByText\(['"`]([^'"`]+)['"`]\)/g,
+    'canvas.getByText(/$1/)'
+  );
+}
+```
+
+### Pattern 2: Select Value Fix
+```typescript
+// Detection: selectElement.value or element.value on select elements
+// Replacement: element.options[element.selectedIndex]
+
+function fixSelectValue(code: string): string {
+  return code.replace(
+    /(\w+Element)\.value/g,
+    '$1.options[$1.selectedIndex]'
+  );
+}
+```
+
+### Pattern 3: Select Expectation Fix
+```typescript
+// Detection: expect(selectElement.value).toBe(...)
+// Replacement: expect(selectElement.options[selectElement.selectedIndex].textContent?.trim()).toBe(...)
+
+function fixSelectExpectation(code: string): string {
+  return code.replace(
+    /expect\((\w+Element)\.value\)\.toBe\(([^)]+)\)/g,
+    'expect($1.options[$1.selectedIndex].textContent?.trim()).toBe($2)'
+  );
+}
+```
+
+## 🛠️ Complete Fix Template
+
+```typescript
+// ✅ Fixed interaction patterns
+export const InteractiveStory: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // ✅ Use regex for transloco text
+    const label = canvas.getByText(/Expected Label/);
+    await expect(label).toBeInTheDocument();
+    
+    // ✅ Select element handling
+    const selectElement = canvasElement.querySelector('[data-test-id="select"]');
+    if (selectElement instanceof HTMLSelectElement) {
+      // Select option
+      await userEvent.selectOptions(selectElement, 'option-text');
+      
+      // ✅ Use selectedIndex for ngValue
+      const selectedOption = selectElement.options[selectElement.selectedIndex];
+      await expect(selectedOption).toBeDefined();
+      await expect(selectedOption.textContent?.trim()).toBe('option-text');
+      await expect(selectedOption.selected).toBe(true);
+    }
+    
+    // ✅ Button interactions with regex
+    const submitButton = canvas.getByText(/Submit/);
+    await userEvent.click(submitButton);
+  }
+};
+```
+
+## 📋 Fix Checklist
+
+When applying fixes, ensure:
+
+1. **Text Matching**: All `getByText('exact')` → `getByText(/exact/)`
+2. **Select Values**: All `selectElement.value` → `selectElement.options[selectElement.selectedIndex]`
+3. **Option Verification**: Use `textContent?.trim()` for option text comparison
+4. **Type Safety**: Include `instanceof HTMLSelectElement` checks
+5. **Regex Safety**: Escape special regex characters in text patterns
+
+## 🎯 Advanced Patterns
+
+### Dynamic Text with Variables
+```typescript
+// ✅ Handle dynamic text patterns
+const dynamicText = 'Storage Class';
+const label = canvas.getByText(new RegExp(dynamicText));
+
+// ✅ Or use flexible patterns
+const label = canvas.getByText(/Storage\s+Class/i); // Case insensitive, flexible spacing
+```
+
+### Complex Select Scenarios
+```typescript
+// ✅ Multi-select or complex scenarios
+const selectElement = canvasElement.querySelector('[data-test-id="multi-select"]');
+if (selectElement instanceof HTMLSelectElement) {
+  // Get all selected options
+  const selectedOptions = Array.from(selectElement.selectedOptions);
+  await expect(selectedOptions).toHaveLength(2);
+  
+  // Verify specific selections
+  const firstSelected = selectElement.options[selectElement.selectedIndex];
+  await expect(firstSelected.textContent?.trim()).toBe('expected-text');
+}
+```
+
+## Key Benefits
+
+1. **Transloco Compatibility**: Regex patterns handle dynamic translations
+2. **Angular ngValue Support**: Proper handling of object-bound select options
+3. **Type Safety**: Maintains proper TypeScript type checking
+4. **Reliability**: Reduces flaky tests from DOM value dependencies
+5. **Maintainability**: Consistent patterns across all stories
+
+---
+
+**Note**: This rule specifically addresses Angular + Transloco + Storybook interaction patterns. Apply systematically to all story files for consistent behavior.

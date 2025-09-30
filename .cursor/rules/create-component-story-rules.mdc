@@ -12,1675 +12,637 @@ When user requests "Create story for [component-name]" or "Generate stories for 
 
 ## 🚀 Angular 19 Compatibility
 
-**Important**: This rule is optimized for Angular 19, where components are **standalone by default**. A component is only considered non-standalone if it explicitly declares `standalone: false` in the component decorator.
+**Important**: Components are **standalone by default**. A component is only non-standalone if it explicitly declares `standalone: false`.
 
-## Analysis Steps
+## Core Generation Flow
 
-### Step 1: Component Analysis
-Automatically detect and extract:
-1. **@Input() properties** - for controls generation
-2. **@Output() events** - for action handlers
-3. **Interactive elements** - buttons, inputs, forms
-4. **Component dependencies** - imports and providers
-5. **Component type** - form, display, interactive, etc.
-6. **Standalone status** - Angular 19 default is standalone, only non-standalone if `standalone: false` is explicitly declared
-7. **Service dependencies** - analyze constructor and identify required services
-8. **Translation usage** - detect *transloco="let t" and t() calls in template, extract translation keys for stories parameters
+### 1. Component Analysis
+Automatically detect:
+1. **Standalone status** - Angular 19 default is standalone, only non-standalone if `standalone: false` is explicitly declared
+2. **Import statements** - extract all import paths and types from component.ts for accurate type reuse
+3. **Dependencies** - analyze HTML/TS for required modules, pipes, services
+4. **@Input() properties** - for controls generation with actual types from imports  
+5. **@Output() events** - for action handlers with `import { action } from '@storybook/addon-actions'`
+6. **Translation usage** - detect `*transloco="let t"` and `t()` calls, extract translation keys for parameters.translations
+7. **Service injection** - check constructor for injected services, compare with @storybook-config/preview.ts global providers
+   - TranslocoService: Use parameters.translations for i18n content
+   - Store (@ngxs/store): Use parameters.storeSelectors/storeReducers for state management
+   - Other services: Create local mocks only if not globally provided
 
-### Step 2: Non-Standalone Component Setup
-
-> **Angular 19 Note**: This section only applies to components that explicitly declare `standalone: false`. By default, all Angular 19 components are standalone.
-
-#### Component Type Detection
+### 2. Dependency Analysis & Import Strategy
 ```typescript
-// ✅ Angular 19: Components are standalone by default
-// Only non-standalone if explicitly declared as standalone: false
-const isStandalone = !componentSource.includes('standalone: false');
-
-// Alternative detection method using component metadata
-const isStandaloneFromMetadata = componentMetadata.standalone !== false;
-
-// For non-standalone components, analyze required modules
-if (!isStandalone) {
-  // 1. Identify required Angular modules (CommonModule, ReactiveFormsModule, etc.)
-  // 2. Identify required third-party modules (ClarityModule, TranslocoModule, etc.)
-  // 3. Identify dependent components that need to be declared
-}
-```
-
-#### Service Dependency Analysis
-```typescript
-// Analyze constructor parameters to identify service dependencies
-const serviceDependencies = analyzeConstructorDependencies(component);
-
-// Check .storybook-base/preview.ts for existing providers
-const existingProviders = parsePreviewProviders('.storybook-base/preview.ts');
-
-// Determine which services need mocking
-const servicesToMock = serviceDependencies.filter(service => 
-  !existingProviders.includes(service) && isGlobalSingleton(service)
-);
-```
-
-#### Mock Service Generation (if needed)
-For services not provided in preview.ts, create mock classes:
-
-**Create .storybook-base/mock/[service-name].mock.ts:**
-```typescript
-// Example: .storybook-base/mock/format-service.mock.ts
-export class MockFormatService {
-  dateToAge(date: Date): string {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    
-    if (diffMins < 60) return `${diffMins}m`;
-    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h`;
-    return `${Math.floor(diffMins / 1440)}d`;
+// ✅ Comprehensive Dependency Analysis
+function analyzeDependencies(componentSource: string, templateContent: string): {
+  imports: string[];
+  providers: string[];
+  mockTypes: string[];
+  unknownComponents: string[];
+} {
+  const imports = ['CommonModule'];
+  const providers = [];
+  const mockTypes = [];
+  const unknownComponents = [];
+  
+  // Standalone check
+  const isStandalone = !componentSource.includes('standalone: false');
+  
+  // Clarity UI detection
+  if (/clr-|cds-|\[clr|\(clr/.test(templateContent)) {
+    imports.push('ClarityModule');
   }
   
-  // Add other required methods based on component usage
+  // Transloco detection - critical for component display
+  if (/\*transloco\s*=\s*["']let\s+\w+["']|t\(['"`]/.test(templateContent)) {
+    imports.push('SdkI18nModule from @storybook-config/mock'); // ✅ Use path aliases
+  }
+  
+  // Custom component detection (non-standard selectors)
+  const customComponentMatches = templateContent.match(/<([a-z]+-[a-z\-]+)/g);
+  if (customComponentMatches) {
+    customComponentMatches.forEach(match => {
+      const componentSelector = match.replace('<', '');
+      // Skip known framework components
+      if (!componentSelector.startsWith('clr-') && 
+          !componentSelector.startsWith('cds-') && 
+          !componentSelector.startsWith('ng-')) {
+        unknownComponents.push(componentSelector);
+      }
+    });
+  }
+  
+  // Pipe dependencies (prefer real imports, check standalone status)
+  const pipeMatches = templateContent.match(/\|\s*(\w+)/g);
+  if (pipeMatches) {
+    pipeMatches.forEach(pipe => {
+      const pipeName = pipe.replace(/\|\s*/, '');
+      if (!['date', 'json', 'uppercase', 'lowercase', 'currency'].includes(pipeName)) {
+        // ✅ Try real import first: import { SortByPipe } from '../pipes/sort-by.pipe'
+        // ✅ Check pipe's standalone status to determine placement:
+        // - standalone: true (Angular 19 default) → imports: [PipeName]
+        // - standalone: false → declarations: [PipeName]
+        // ❌ Avoid complex mocks: only create simple mocks when real import fails
+        imports.push(`${pipeName}Pipe from relative path`);
+      }
+    });
+  }
+  
+  // Service injection analysis - check against global providers
+  const constructorMatch = componentSource.match(/constructor\([^)]*\)/);
+  if (constructorMatch) {
+    const globalServices = ['TranslocoService', 'Store']; // From @storybook-config
+    const injectedServices = extractInjectedServices(constructorMatch[0]);
+    
+    // Determine strategy for each service
+    injectedServices.forEach(service => {
+      if (service.includes('TranslocoService')) {
+        // Use parameters.translations instead of mocking
+      } else if (service.includes('Store')) {
+        // Use parameters.storeSelectors/storeReducers instead of mocking
+      } else {
+        // Create local mock for non-global services
+        mockTypes.push(`Mock${service}`);
+      }
+    });
+  }
+  
+  return { imports, providers, mockTypes, unknownComponents };
 }
 ```
 
-**Update .storybook-base/mock/index.ts:**
+### 3. Unknown Component Handling Strategy
+
 ```typescript
-export { MockFormatService } from './format-service.mock';
-export { MockTranslocoService } from './transloco-service.mock';
-// Export all mock services
+// ✅ Generate TODO comments for unknown components
+function generateUnknownComponentTodos(unknownComponents: string[]): string {
+  if (unknownComponents.length === 0) return '';
+  
+  const todos = unknownComponents.map(selector => {
+    const componentName = selector.split('-')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join('') + 'Component';
+    
+    return `// TODO: Import the real ${selector} component
+// Example: import { ${componentName} } from '../path/to/${selector}/${selector}.component';
+// Then add '${componentName}' to the imports array in moduleMetadata`;
+  });
+  
+  return todos.join('\n');
+}
+
+// ✅ Template for unknown component handling
+const unknownComponentTemplate = `
+// TODO: Import unknown components found in template:
+// Components detected: [COMPONENT_SELECTORS]
+// 
+// For each component:
+// 1. Find the actual import path
+// 2. Import the component
+// 3. Add to moduleMetadata imports (if standalone) or declarations (if non-standalone)
+// 4. Update test selectors in play functions based on real component structure
+`;
 ```
 
-**Update .storybook-base/preview.ts providers:**
+### 4. Dependency Strategy (Real Types First)
 ```typescript
-import { MockFormatService } from './mock';
+// ✅ Priority Strategy: Real Types > Type-Safe Mocks > Never Any
+function analyzeDependencyStrategy(componentSource: string, templateContent: string): {
+  realImports: string[];
+  standalonePipes: string[];
+  nonStandalonePipes: string[];
+  mockServices: string[];
+  mockData: string[];
+} {
+  // 1. Import real types from component
+  // ✅ Extract types from component imports
+  const typeImports = extractImportsFromComponent(componentSource);
+  // ✅ Always use component's actual import paths
+  
+  // 2. Direct import of component-related pipes/services  
+  // ✅ Import real implementations when available
+  // import { SortByPipe } from '../pipes/sort-by.pipe';
+  
+  // 3. Analyze pipe standalone status for correct placement
+  function analyzePipeStandalone(pipeSource: string): boolean {
+    // Angular 19: standalone by default unless explicitly declared false
+    return !pipeSource.includes('standalone: false');
+  }
+  
+  // 4. Create type-safe mocks using real types
+  // ✅ Use component's actual types for mock data
+  function generateTypeSafeMockData(componentInputs: InputProperty[]): string[] {
+    return componentInputs.map(input => {
+      const inputType = extractInputType(input);
+      return `const mock${capitalize(input.name)}: ${inputType} = { /* properties matching ${inputType} */ };`;
+    });
+  }
+  
+  // 5. Smart service strategy - check global providers first
+  // ✅ Analyze injected services against global providers
+  function analyzeServiceStrategy(injectedServices: string[]): ServiceStrategy {
+    const globalServices = ['TranslocoService', 'Store']; // From @storybook-config
+    const needsLocalMock = injectedServices.filter(service => 
+      !globalServices.includes(service.replace(/^.*\./, '')) // Remove namespace
+    );
+    
+    return {
+      useGlobalStore: injectedServices.some(s => s.includes('Store')),
+      useGlobalTransloco: injectedServices.some(s => s.includes('TranslocoService')),
+      needsLocalMocks: needsLocalMock,
+    };
+  }
+  
+  // ✅ Generate parameters configuration instead of service mocks
+  function generateParametersConfig(componentUsage: ComponentUsage): ParametersConfig {
+    const config: ParametersConfig = {};
+    
+    // Translation keys from template analysis
+    if (componentUsage.usesTransloco) {
+      config.translations = extractTranslationKeys(componentUsage.template);
+    }
+    
+    // Store selectors and reducers from component analysis
+    if (componentUsage.usesStore) {
+      config.storeSelectors = analyzeStoreSelectors(componentUsage.storeUsage);
+      config.storeReducers = analyzeStoreActions(componentUsage.actionDispatches);
+    }
+    
+    return config;
+  }
+  
+  return { realImports, standalonePipes, nonStandalonePipes, mockServices, mockData };
+}
 
-const basePreview: Preview = {
-  decorators: [
-    applicationConfig({
-      providers: [
-        importProvidersFrom(BrowserAnimationsModule),
-        importProvidersFrom(ClarityModule),
-        // Add mock services as needed
-        { provide: FormatService, useClass: MockFormatService },
-        { provide: TranslocoService, useValue: mockTranslocoService },
-      ],
-    }),
-    // ... existing decorators
-  ],
+// ✅ Type extraction utilities - extract exact import paths from component
+function extractImportsFromComponent(source: string): ImportAnalysis[] {
+  const importMatches = source.match(/import\s*{([^}]+)}\s*from\s*['"`]([^'"`]+)['"`]/g);
+  return importMatches?.map(match => {
+    const [, types, path] = match.match(/import\s*{([^}]+)}\s*from\s*['"`]([^'"`]+)['"`]/) || [];
+    return { 
+      types: types.split(',').map(t => t.trim()), 
+      path: path.trim() // Keep exact path from component
+    };
+  }) || [];
+}
+
+interface ImportAnalysis {
+  types: string[];
+  path: string; // Exact import path from component.ts
+}
+
+// ✅ Generate import statements using component's actual paths
+function generateImportStatements(componentImports: ImportAnalysis[]): string[] {
+  return componentImports.map(({ types, path }) => 
+    `import { ${types.join(', ')} } from '${path}'; // From component's imports`
+  );
+}
+
+function extractInputType(input: string): string {
+  const typeMatch = input.match(/@Input\(\)\s*(\w+)(?::\s*([^;=]+))?/);
+  return typeMatch?.[2]?.trim() || 'unknown';
+}
+```
+
+### 4. Story Template Generation
+
+#### Template Module Strategy
+```typescript
+// ✅ Module Import Strategy for Custom Templates
+function determineModuleStrategy(stories: Story[]): 'global' | 'individual' {
+  const storiesWithCustomTemplate = stories.filter(story => story.render);
+  const storiesRequiringModules = stories.filter(story => 
+    story.render && (
+      story.render.template.includes('[(ngModel)]') ||  // FormsModule
+      story.render.template.includes('*ngFor') ||        // CommonModule
+      story.render.template.includes('clr-')             // ClarityModule
+    )
+  );
+  
+  // If majority of stories need modules, add to meta decorators
+  if (storiesRequiringModules.length > stories.length / 2) {
+    return 'global';
+  }
+  
+  // If only few stories need modules, add to individual stories
+  return 'individual';
+}
+
+// ✅ Template Module Requirements Analysis
+const templateModuleMap = {
+  '[(ngModel)]': 'FormsModule',           // Two-way binding
+  '[ngModel]': 'FormsModule',             // One-way binding  
+  '(ngModelChange)': 'FormsModule',       // Event binding
+  '*ngFor': 'CommonModule',               // Structural directives
+  '*ngIf': 'CommonModule',                // Structural directives
+  'clr-': 'ClarityModule',                // Clarity components
+  'cds-': 'ClarityModule',                // Clarity design system
+  '*transloco': 'SdkI18nModule',          // Translation
 };
 ```
 
-#### Translation Key Analysis
-Analyze component template for transloco usage and extract translation keys:
-
-```typescript
-// Parse template for transloco usage patterns
-function analyzeTranslationKeys(templateContent: string): string[] {
-  const translationKeys: string[] = [];
-  
-  // Pattern 1: t('key') function calls
-  const tFunctionPattern = /t\(['"`](.*?)['"`]\)/g;
-  let match;
-  while ((match = tFunctionPattern.exec(templateContent)) !== null) {
-    translationKeys.push(match[1]);
-  }
-  
-  // Pattern 2: {{ t('key') }} in interpolation
-  const interpolationPattern = /\{\{\s*t\(['"`](.*?)['"`]\)\s*\}\}/g;
-  while ((match = interpolationPattern.exec(templateContent)) !== null) {
-    translationKeys.push(match[1]);
-  }
-  
-  // Pattern 3: [placeholder]="t('key')" in attributes
-  const attributePattern = /\[\w+\]=['"`].*?t\(['"`](.*?)['"`].*?['"`]/g;
-  while ((match = attributePattern.exec(templateContent)) !== null) {
-    translationKeys.push(match[1]);
-  }
-  
-  return [...new Set(translationKeys)]; // Remove duplicates
-}
-
-// ✅ Check if component uses transloco
-function hasTranslocoUsage(templateContent: string): boolean {
-  // Check for *transloco directive
-  const translocoDirectivePattern = /\*transloco\s*=\s*["']let\s+\w+["']/;
-  
-  // Check for t() function calls
-  const tFunctionPattern = /t\(['"`][^'"`]*['"`]\)/;
-  
-  return translocoDirectivePattern.test(templateContent) || tFunctionPattern.test(templateContent);
-}
-
-// Example usage:
-if (hasTranslocoUsage(templateContent)) {
-  const detectedKeys = analyzeTranslationKeys(templateContent);
-  // Generate translations only if transloco is used
-  const translations = generateTranslationParameters(detectedKeys);
-} else {
-  // No transloco usage - skip translation parameters
-  console.log('Component does not use transloco, skipping translation parameters');
-}
-```
-
-#### Auto-Generate Translation Parameters
-```typescript
-// Generate translation mappings for stories
-function generateTranslationParameters(translationKeys: string[]): Record<string, string> {
-  const translations: Record<string, string> = {};
-  
-  translationKeys.forEach(key => {
-    // Generate meaningful default translations based on key patterns
-    translations[key] = generateDefaultTranslation(key);
-  });
-  
-  return translations;
-}
-
-function generateDefaultTranslation(key: string): string {
-  const keyMappings: Record<string, string> = {
-    // Common patterns
-    'sdk.label.type': 'Type',
-    'sdk.label.reason': 'Reason',
-    'sdk.label.age': 'Age',
-    'sdk.label.from': 'Source',
-    'sdk.label.message': 'Message',
-    'sdk.text.filterPlaceholder': 'Filter...',
-    'sdk.text.noItemFoundContaining_value': 'No items found containing "{{value}}"',
-    
-    // Component-specific
-    'sdkUI.eventList.title': 'Events',
-    'sdkUI.eventList.datagrid.noEvents': 'No events found',
-    'sdkUI.eventList.datagrid.footer.eventList': 'Event list',
-  };
-  
-  return keyMappings[key] || key.split('.').pop() || key;
-}
-```
-
-### Step 3: Story Structure Generation
-
-#### Base Story Template for Non-Standalone Components (Optimized)
+#### Universal Template (Real Dependencies First Strategy)
 ```typescript
 import type { Meta, StoryObj } from '@storybook/angular';
 import { moduleMetadata } from '@storybook/angular';
-import { action } from '@storybook/addon-actions';
 import { userEvent, within, expect } from '@storybook/test';
-
-// Component and dependencies
-import { [COMPONENT_NAME] } from './[component-file-name]';
+import { action } from '@storybook/addon-actions';
 import { CommonModule } from '@angular/common';
-import { [REQUIRED_MODULES] } from '[module-paths]';
-import { [DEPENDENT_COMPONENTS] } from '[component-paths]';
+import { ClarityModule } from '@clr/angular';
+import { FormsModule } from '@angular/forms'; // ✅ For ngModel in custom templates
+import { SdkI18nModule } from '@storybook-config/mock'; // ✅ Use path aliases
+import { [REAL_TYPES] } from '[COMPONENT_IMPORT_PATH]'; // ✅ Use component's actual import paths
+import { [REAL_PIPES] } from '../pipes/[pipe-name].pipe'; // ✅ Prefer real pipes
+import { [COMPONENT_NAME] } from './[component-file-name]';
+
+// TODO: Import unknown components found in template
+// [UNKNOWN_COMPONENT_TODOS]
+// Example: import { CciIconLabelComponent } from '../path/to/cci-icon-label/cci-icon-label.component';
+// Then:
+// 1. Add to imports array in moduleMetadata if standalone
+// 2. Add to declarations array if non-standalone  
+// 3. Update play function selectors based on real component structure
+
+// ✅ Type-safe mock data using component's actual types
+const mock[DATA_NAME]: [REAL_TYPE] = {
+  [REQUIRED_PROPERTIES], // All required properties from type definition
+  // Optional properties only if used by component
+};
+
+// ✅ Only create abstracts for services NOT in global providers
+// Check @storybook-config/preview.ts first:
+// - TranslocoService: Use parameters.translations
+// - Store: Use parameters.storeSelectors/storeReducers
+// 
+// For other services not globally provided:
+abstract class [LOCAL_SERVICE_NAME] {
+  abstract [METHOD_SIGNATURES]; // Based on component usage
+}
+
+class Mock[LOCAL_SERVICE_NAME] implements [LOCAL_SERVICE_NAME] {
+  [TYPED_METHOD_IMPLEMENTATIONS] // Only for non-global services
+}
 
 const meta: Meta<[COMPONENT_NAME]> = {
   title: 'Components/[COMPONENT_NAME]',
   component: [COMPONENT_NAME],
+  // ✅ Strategy: Only add global decorators if MAJORITY of stories need custom templates
   decorators: [
     moduleMetadata({
       imports: [
-        CommonModule,
-        [REQUIRED_MODULES] // ClarityModule, TranslocoModule, etc.
-      ],
+        CommonModule, 
+        ClarityModule, 
+        SdkI18nModule, 
+        [STANDALONE_PIPES],
+        // TODO: Add unknown standalone components here
+        // [UNKNOWN_STANDALONE_COMPONENTS]
+      ], // Standard modules + standalone pipes + standalone components
       declarations: [
-        [COMPONENT_NAME],
-        [DEPENDENT_COMPONENTS] // FilterInputComponent, etc.
+        [COMPONENT_NAME], 
+        [NON_STANDALONE_PIPES],
+        // TODO: Add unknown non-standalone components here  
+        // [UNKNOWN_NON_STANDALONE_COMPONENTS]
+      ], // Non-standalone pipes + non-standalone components
+      providers: [
+        { provide: [PIPE_TOKEN], useClass: [REAL_PIPE] }, // Constructor-injected pipes
       ],
     }),
-    // ✅ Define common template in decorator to avoid repetition
-    (storyFn) => {
-      const story = storyFn();
-      return {
-        ...story,
-        template: `
-          <div style="padding: 20px; max-width: 400px;">
-            <[COMPONENT_SELECTOR]
-              [GENERATED_INPUT_BINDINGS]
-              [GENERATED_OUTPUT_BINDINGS]>
-            </[COMPONENT_SELECTOR]>
-          </div>
-        `,
-      };
-    },
   ],
   parameters: {
     layout: 'centered',
-    docs: {
-      description: {
-        component: '[AUTO_GENERATED_DESCRIPTION]'
-      }
-    }[CONDITIONAL_TRANSLATIONS_PARAMETER]
+    // ✅ For TranslocoService - configure translations (if component uses transloco)
+    translations: { [EXTRACTED_TRANSLATION_KEYS] },
+    // ✅ For Store service - configure selectors and reducers (if component uses store)
+    storeSelectors: [
+      {
+        selector: [SELECTOR_FROM_COMPONENT],
+        initialValue: [INITIAL_VALUE],
+      },
+    ],
+    storeReducers: [
+      {
+        actionType: [ACTION_TYPE_FROM_COMPONENT],
+        selector: [SELECTOR_FROM_COMPONENT],
+        handler: (current: [TYPE]) => [LOGIC_BASED_ON_COMPONENT],
+      },
+    ],
   },
-  // tags: ['autodocs'], // ✅ Commented out by default - can be enabled per project
   argTypes: {
-    [AUTO_GENERATED_ARG_TYPES]
+    [INPUT_CONTROLS],
+    [OUTPUT_ACTIONS]: { action: 'eventName' },
   },
-  args: {
-    [AUTO_GENERATED_DEFAULT_ARGS]
-  }
 };
 
 export default meta;
 type Story = StoryObj<[COMPONENT_NAME]>;
 
-// ✅ Most stories only need args (no render function)
 export const Default: Story = {
   args: {
-    [DEFAULT_ARGS]
+    [PROPERTY]: mock[DATA_NAME], // ✅ Direct assignment with correct typing
+    [EVENT_HANDLERS]: action('eventName'),
   },
   play: async ({ canvasElement }) => {
-    // ✅ Use universal element selection best practices
-    const [MAIN_ELEMENT] = canvasElement.querySelector('[data-test-id="[COMPONENT_TEST_ID]"]');
-    await expect([MAIN_ELEMENT]).toBeInTheDocument();
-    
-    // [AUTO_GENERATED_ELEMENT_TESTS]
+    // TODO: Update selectors based on unknown components structure
+    // Use fallback selectors that work with both unknown and known components
+    const element = canvasElement.querySelector('[data-test-id="main-element"], [UNKNOWN_COMPONENT_SELECTORS]');
+    await expect(element).toBeInTheDocument();
   }
 };
 
-// ✅ For stories needing custom templates, override with render function
-export const CustomLayoutStory: Story = {
+// ✅ Individual story with custom template and specific modules
+export const WithCustomTemplate: Story = {
   args: {
-    [CUSTOM_ARGS]
+    [CUSTOM_ARGS],
   },
+  decorators: [
+    moduleMetadata({
+      imports: [CommonModule, FormsModule, [COMPONENT_NAME]], // ✅ Only modules needed for this template
+    }),
+  ],
   render: (args) => ({
-    props: args,
+    props: { 
+      ...args, 
+      customData: mock[DATA_NAME] // ✅ Direct assignment with full type safety
+    },
     template: `
-      <div class="custom-wrapper">
-        <p>Custom context description</p>
-        <[COMPONENT_SELECTOR] [BINDINGS]></[COMPONENT_SELECTOR]>
-      </div>
+      <[COMPONENT_NAME]
+        [config]="config"
+        [(ngModel)]="customData">  <!-- Requires FormsModule -->
+      </[COMPONENT_NAME]>
     `,
   }),
   play: async ({ canvasElement }) => {
-    // Custom interactions
-  }
-};
-```
-
-#### Base Story Template for Standalone Components (Optimized)
-```typescript
-import type { Meta, StoryObj } from '@storybook/angular';
-import { action } from '@storybook/addon-actions';
-import { userEvent, within, expect } from '@storybook/test';
-import { [COMPONENT_NAME] } from './[component-file-name]';
-
-const meta: Meta<[COMPONENT_NAME]> = {
-  title: 'Components/[COMPONENT_NAME]',
-  component: [COMPONENT_NAME],
-  decorators: [
-    // ✅ Define common template in decorator for standalone components too
-    (storyFn) => {
-      const story = storyFn();
-      return {
-        ...story,
-        template: `
-          <div style="padding: 20px; max-width: 400px;">
-            <[COMPONENT_SELECTOR]
-              [GENERATED_INPUT_BINDINGS]
-              [GENERATED_OUTPUT_BINDINGS]>
-            </[COMPONENT_SELECTOR]>
-          </div>
-        `,
-      };
-    },
-  ],
-  parameters: {
-    layout: 'centered',
-    docs: {
-      description: {
-        component: '[AUTO_GENERATED_DESCRIPTION]'
-      }
-    }[CONDITIONAL_TRANSLATIONS_PARAMETER]
-  },
-  // tags: ['autodocs'], // ✅ Commented out by default - can be enabled per project
-  argTypes: {
-    [AUTO_GENERATED_ARG_TYPES]
-  },
-  args: {
-    [AUTO_GENERATED_DEFAULT_ARGS]
-  }
-};
-
-export default meta;
-type Story = StoryObj<[COMPONENT_NAME]>;
-
-// ✅ Most stories only need args (clean and simple)
-export const Default: Story = {
-  args: {
-    [DEFAULT_PROP_VALUES]
-  },
-  play: async ({ canvasElement }) => {
-    // ✅ Use universal element selection best practices
-    const [MAIN_ELEMENT] = canvasElement.querySelector('[data-test-id="[COMPONENT_TEST_ID]"]');
-    await expect([MAIN_ELEMENT]).toBeInTheDocument();
+    // Wait for ngModel binding
+    await new Promise(resolve => setTimeout(resolve, 200));
     
-    // [AUTO_GENERATED_ELEMENT_TESTS]
+    const element = canvasElement.querySelector('[data-test-id="element"]');
+    await expect(element).toBeInTheDocument();
   }
 };
 ```
 
-### Step 4: Input/Output Args Synchronization
+### 5. Type Safety Requirements
 
-#### Ensure Args Match Component Interface
+#### **CRITICAL: Never Use `any` Type**
 ```typescript
-// AUTO-GENERATE args based on @Input() and @Output() properties
-// For @Input() properties - create matching args with appropriate default values
-// For @Output() events - create action handlers in args
+// ❌ NEVER do this
+const mockData: any = { ... };
+select(selector: any): any { ... }
+dispatch(action: any): void { ... }
 
-interface ComponentInterface {
-  // Extract from component TypeScript interface
-  [INPUT_PROPERTY]: [INPUT_TYPE];
-  [OUTPUT_EVENT]: EventEmitter<[OUTPUT_TYPE]>;
+// ✅ ALWAYS use proper types
+const mockServiceConfig: MfeConfigBaseModel = {
+  pathName: 'test-service',
+  displayName: 'Test Service',
+  // ... all required properties
+};
+
+interface Observable<T> {
+  subscribe(observer: (value: T) => void): { unsubscribe(): void };
 }
 
-// Generate corresponding args
-const componentArgs = {
-  // Input properties with type-appropriate defaults
-  [INPUT_PROPERTY]: [MOCK_DEFAULT_VALUE], // Matching the input type
-  
-  // Output events with action handlers
-  [OUTPUT_EVENT]: action('[output-event-name]'),
-};
-```
-
-#### Mock Data Generation Rules
-```typescript
-// Generate realistic mock data matching component data types
-const mockDataGenerator = {
-  // For complex objects, create realistic structures
-  'Observable<NsEvent[]>': () => of([
-    {
-      eventType: 'Normal',
-      reason: 'Started',
-      createdOn: new Date(Date.now() - 5 * 60 * 1000),
-      from: 'kubelet',
-      message: 'Started container web-app',
-      name: 'web-app-pod',
-      namespace: 'default',
-      type: 'Normal',
-      uid: 'event-001',
-    }
-  ]),
-  
-  // For arrays, create multiple realistic items
-  'User[]': () => [
-    { id: 1, name: 'John Doe', email: 'john@example.com', role: 'admin' },
-    { id: 2, name: 'Jane Smith', email: 'jane@example.com', role: 'user' }
-  ],
-  
-  // For primitives, use realistic defaults
-  'string': () => 'Sample text',
-  'number': () => 42,
-  'boolean': () => false,
-  'Date': () => new Date()
-};
-```
-
-### Step 3: Input/Output Controls Generation
-
-#### For @Input() Properties
-```typescript
-// Auto-generate based on TypeScript types
-argTypes: {
-  // String inputs
-  [STRING_INPUT]: {
-    control: 'text',
-    description: '[AUTO_DESCRIPTION]',
-    defaultValue: '[DEFAULT_VALUE]'
-  },
-  
-  // Boolean inputs
-  [BOOLEAN_INPUT]: {
-    control: 'boolean',
-    description: '[AUTO_DESCRIPTION]',
-    defaultValue: false
-  },
-  
-  // Number inputs
-  [NUMBER_INPUT]: {
-    control: { type: 'number', min: 0, max: 100 },
-    description: '[AUTO_DESCRIPTION]',
-    defaultValue: 0
-  },
-  
-  // Enum/Union inputs
-  [ENUM_INPUT]: {
-    control: 'select',
-    options: ['[OPTION_1]', '[OPTION_2]', '[OPTION_3]'],
-    description: '[AUTO_DESCRIPTION]',
-    defaultValue: '[FIRST_OPTION]'
-  },
-  
-  // Array inputs
-  [ARRAY_INPUT]: {
-    control: 'object',
-    description: '[AUTO_DESCRIPTION]',
-    defaultValue: []
-  },
-  
-  // Object inputs
-  [OBJECT_INPUT]: {
-    control: 'object',
-    description: '[AUTO_DESCRIPTION]',
-    defaultValue: {}
-  }
+class MockStore implements StoreInterface {
+  select<T>(selector: unknown): Observable<T> { ... }
+  dispatch(action: StoreAction): void { ... }
 }
 ```
 
-#### For @Output() Events
+#### **Mock Data Type Strategy**
 ```typescript
-argTypes: {
-  // Auto-generate action configurations for outputs
-  [OUTPUT_EVENT]: {
-    action: '[output-event-name]'
-  },
-  [CLICK_EVENT]: {
-    action: 'clicked'
-  },
-  [CHANGE_EVENT]: {
-    action: 'changed'
-  },
-  [SUBMIT_EVENT]: {
-    action: 'submitted'
-  }
-},
+// ✅ Step 1: Import component's actual types (use component's exact import paths)
+import { MfeConfigBaseModel } from './mfe-config.model'; // Local file path
+import { KubernetesResourceType } from '@cci/sdk-utils'; // External module
+import { ComponentInterface } from './component-name.component';
+
+// ✅ Step 2: Create type-safe mock data
+const mockServiceConfig: MfeConfigBaseModel = {
+  // Include ALL required properties from interface
+  pathName: 'test-service',
+  displayName: 'Test Service',
+  remoteName: 'cci_test_service_mfe',
+  supportedResourceTypes: [] as KubernetesResourceType[],
+  // ... complete implementation
+};
+
+// ✅ Step 3: Use proper generics for collections
+const mockStorageClasses: NsStorageClass[] = [
+  { name: 'standard' }, // Only properties actually used
+  { name: 'premium' }
+];
+
+// ✅ Step 4: No type assertions needed
 args: {
-  // Auto-generate action handlers for all outputs
-  [OUTPUT_EVENT]: action('[output-event-name]'),
-  [CLICK_EVENT]: action('clicked'),
-  [CHANGE_EVENT]: action('changed'),
-  [SUBMIT_EVENT]: action('submitted')
+  serviceConfig: mockServiceConfig, // Direct assignment
+  storageClasses: mockStorageClasses, // Already correctly typed
 }
 ```
 
-### Step 4: HTML Template Analysis & Interactive Stories Generation
-
-#### HTML Element Detection Rules
-Analyze the component's HTML template to detect interactive elements:
-
-**Button Elements Detection:**
-- `<button>` tags
-- `<clr-button>` Clarity buttons  
-- `[role="button"]` elements
-- `<input type="button|submit|reset">`
-- Elements with `(click)` handlers
-
-**Input Elements Detection:**
-- `<input>` tags (all types)
-- `<textarea>` elements
-- `<select>` dropdowns
-- `<clr-input>`, `<clr-textarea>`, `<clr-select>` Clarity form controls
-- `<clr-checkbox>`, `<clr-radio>` Clarity form options
-- `<clr-datepicker>`, `<clr-combobox>` specialized Clarity inputs
-
-**Form Elements Detection:**
-- `<form>` containers
-- `<clr-form>` Clarity forms
-- Elements with `ngModel` or `formControl` directives
-
-#### Auto-Generated Stories Based on HTML Analysis
-
-**For Each Button Element Found:**
+#### **Service Mock Type Strategy**
 ```typescript
-export const ButtonInteractions: Story = {
-  ...Default,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Find all button elements
-    const buttons = canvas.getAllByRole('button');
-    const primaryButton = buttons[0]; // First button
-    const secondaryButton = buttons[1]; // Second button (if exists)
-    
-    // Test primary button
-    if (primaryButton instanceof HTMLButtonElement && !primaryButton.disabled) {
-    await userEvent.click(primaryButton);
-    await expect(primaryButton).toBeInTheDocument();
-    }
-    
-    // Test secondary button if exists
-    if (secondaryButton instanceof HTMLButtonElement && !secondaryButton.disabled) {
-      await userEvent.click(secondaryButton);
-    }
-    
-    // Test disabled state (if button has disabled property)
-    if (primaryButton.hasAttribute('disabled')) {
-      await expect(primaryButton).toBeDisabled();
-    }
-  }
-};
-
-export const TranslocoSafeInteractions: Story = {
-  ...Default,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // ✅ Correct - Use structural selectors for transloco content
-    const titleElement = canvasElement.querySelector('h4'); // Title by element type
-    await expect(titleElement).toBeInTheDocument();
-    await expect(titleElement?.textContent).toBeTruthy(); // Check content exists, don't check specific text
-    
-    // ✅ Correct - Use data-test-id with proper CSS selector
-    const dataGrid = canvasElement.querySelector('[data-test-id="event-list"]');
-    await expect(dataGrid).toBeInTheDocument();
-    
-    // ✅ Correct - Use semantic roles when available
-    const searchInput = canvas.getByRole('textbox'); // For filter input
-    if (searchInput instanceof HTMLInputElement) {
-      await userEvent.type(searchInput, 'test search');
-      await expect(searchInput).toHaveValue('test search');
-    }
-    
-    // ✅ Correct - Use element structure for Clarity components
-    const clarityDatagrid = canvasElement.querySelector('clr-datagrid');
-    await expect(clarityDatagrid).toBeInTheDocument();
-    
-    // ✅ Correct - Use column structure instead of translated text
-    const columns = canvasElement.querySelectorAll('clr-dg-column');
-    await expect(columns.length).toBeGreaterThan(0);
-  }
-};
-
-export const AllButtonStates: Story = {
-  ...Default,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const buttons = canvas.getAllByRole('button');
-    
-    for (const button of buttons) {
-      const buttonText = button.textContent || button.getAttribute('aria-label') || 'Button';
-      
-      // Test each button with type safety
-      if (button instanceof HTMLButtonElement && !button.disabled) {
-        await userEvent.click(button);
-        console.log(`Clicked: ${buttonText}`);
-      }
-    }
-  }
-};
-```
-
-**For Each Input Element Found:**
-```typescript
-export const InputInteractions: Story = {
-  ...Default,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Text inputs
-    const textInputs = canvas.queryAllByRole('textbox');
-    for (const input of textInputs) {
-      const label = input.getAttribute('aria-label') || input.getAttribute('placeholder') || 'input';
-      await userEvent.clear(input);
-      await userEvent.type(input, `Test ${label}`);
-      await expect(input).toHaveValue(`Test ${label}`);
-    }
-    
-    // Number inputs  
-    const numberInputs = canvas.queryAllByRole('spinbutton');
-    for (const input of numberInputs) {
-      await userEvent.clear(input);
-      await userEvent.type(input, '123');
-      await expect(input).toHaveValue('123');
-    }
-    
-    // Checkboxes
-    const checkboxes = canvas.queryAllByRole('checkbox');
-    for (const checkbox of checkboxes) {
-      await userEvent.click(checkbox);
-      await expect(checkbox).toBeChecked();
-    }
-    
-    // Radio buttons
-    const radios = canvas.queryAllByRole('radio');
-    if (radios.length > 0) {
-      await userEvent.click(radios[0]);
-      await expect(radios[0]).toBeChecked();
-    }
-    
-    // Select dropdowns
-    const selects = canvas.queryAllByRole('combobox');
-    for (const select of selects) {
-      await userEvent.click(select);
-      // Select first option if available
-      const options = canvas.queryAllByRole('option');
-      if (options.length > 0) {
-        await userEvent.click(options[0]);
-      }
-    }
-  }
-};
-
-export const FormValidation: Story = {
-  ...Default,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Test required field validation
-    const requiredInputs = canvas.queryAllByRole('textbox');
-    for (const input of requiredInputs) {
-      if (input.hasAttribute('required') || input.getAttribute('aria-required') === 'true') {
-        await userEvent.clear(input);
-        await userEvent.tab();
-        
-        // Check for validation message
-        const validationMessage = canvas.queryByText(/required/i);
-        if (validationMessage) {
-          await expect(validationMessage).toBeInTheDocument();
-        }
-        
-        // Fix the validation
-        await userEvent.type(input, 'Valid input');
-      }
-    }
-  }
-};
-```
-
-**For Clarity Component Combinations:**
-```typescript
-export const ClarityComponentFlow: Story = {
-  ...Default,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Handle Clarity Button + Input combinations
-    const clrButtons = canvasElement.querySelectorAll('clr-button, [clr-button]');
-    const clrInputs = canvasElement.querySelectorAll('clr-input, clr-textarea, clr-select');
-    
-    // Fill all Clarity inputs first
-    for (const input of clrInputs) {
-      const actualInput = input.querySelector('input, textarea, select');
-      if (actualInput && !actualInput.disabled) {
-        await userEvent.clear(actualInput);
-        
-        if (actualInput.type === 'email') {
-          await userEvent.type(actualInput, 'test@example.com');
-        } else if (actualInput.type === 'password') {
-          await userEvent.type(actualInput, 'password123');
-        } else if (actualInput.type === 'number') {
-          await userEvent.type(actualInput, '42');
-        } else {
-          await userEvent.type(actualInput, 'Test input');
-        }
-      }
-    }
-    
-    // Then interact with Clarity buttons
-    for (const clrButton of clrButtons) {
-      const actualButton = clrButton.querySelector('button') || clrButton;
-      if (actualButton instanceof HTMLButtonElement && !actualButton.disabled) {
-        await userEvent.click(actualButton);
-      }
-    }
-  }
-};
-
-export const ClarityModalFlow: Story = {
-  ...Default,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Handle Clarity Modal interactions
-    const modalTrigger = canvasElement.querySelector('[clr-modal-trigger], .modal-trigger');
-    if (modalTrigger instanceof HTMLElement) {
-      await userEvent.click(modalTrigger);
-      
-      // Wait for modal to appear
-      const modal = canvasElement.querySelector('clr-modal, .modal');
-      if (modal) {
-        // Fill form inside modal if exists
-        const modalInputs = modal.querySelectorAll('input, textarea, select');
-        for (const input of modalInputs) {
-          if (input instanceof HTMLInputElement && input.type === 'text') {
-            await userEvent.type(input, 'Modal input');
-          }
-        }
-        
-        // Click modal action buttons
-        const modalButtons = modal.querySelectorAll('button');
-        const submitButton = Array.from(modalButtons).find(btn => 
-          btn.textContent?.includes('Submit') || btn.textContent?.includes('确认')
-        );
-        
-        if (submitButton instanceof HTMLButtonElement) {
-          await userEvent.click(submitButton);
-        }
-      }
-    }
-  }
-};
-```
-
-#### For Modal/Dialog Components
-```typescript
-export const OpenModal: Story = {
-  ...Default,
-  args: {
-    ...Default.args,
-    isOpen: true
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Test modal interactions
-    const closeButton = canvas.getByLabelText(/close/i);
-    await userEvent.click(closeButton);
-  }
-};
-
-export const ModalWithForm: Story = {
-  ...Default,
-  args: {
-    ...Default.args,
-    isOpen: true
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Fill form in modal
-    const nameInput = canvas.getByLabelText(/name/i);
-    const submitButton = canvas.getByRole('button', { name: /submit/i });
-    
-    await userEvent.type(nameInput, 'John Doe');
-    await userEvent.click(submitButton);
-  }
-};
-```
-
-### Step 5: Advanced Story Patterns
-
-#### Data-driven Stories
-```typescript
-export const WithDifferentData: Story = {
-  ...Default,
-  args: {
-    ...Default.args,
-    items: [
-      { id: 1, name: 'Item 1', status: 'active' },
-      { id: 2, name: 'Item 2', status: 'inactive' },
-      { id: 3, name: 'Item 3', status: 'pending' }
-    ]
-  }
-};
-
-export const EmptyState: Story = {
-  ...Default,
-  args: {
-    ...Default.args,
-    items: []
-  }
-};
-
-export const LoadingState: Story = {
-  ...Default,
-  args: {
-    ...Default.args,
-    loading: true,
-    items: []
-  }
-};
-```
-
-
-## Auto-Generation Rules
-
-### Template Optimization Best Practices
-
-#### Common Template in Decorators
-When most stories use the same component template, define it in meta decorators to eliminate code duplication:
-
-```typescript
-// ✅ Best Practice - Template in decorator
-const meta: Meta<ComponentType> = {
-  decorators: [
-    moduleMetadata({ /* module config */ }),
-    (storyFn) => {
-      const story = storyFn();
-      return {
-        ...story,
-        template: `
-          <component-selector
-            [input1]="input1"
-            [input2]="input2"
-            (output1)="output1($event)"
-            (output2)="output2($event)">
-          </component-selector>
-        `,
-      };
-    },
-  ],
-  // ... other meta config
-};
-
-// Stories only need args (much cleaner)
-export const Default: Story = {
-  args: { input1: 'value', input2: false },
-};
-
-export const Variant: Story = {
-  args: { input1: 'different', input2: true },
-};
-
-// Override template only when needed
-export const CustomLayout: Story = {
-  args: { input1: 'custom', input2: false },
-  render: (args) => ({
-    props: args,
-    template: `
-      <div class="special-wrapper">
-        <component-selector [input1]="input1" [input2]="input2"></component-selector>
-      </div>
-    `,
-  }),
-};
-```
-
-#### Template Generation Logic
-```typescript
-// Auto-generate template bindings from component analysis
-function generateTemplate(component: ComponentAnalysis): string {
-  const inputs = component.inputs
-    .map(input => `[${input.name}]="${input.name}"`)
-    .join('\n            ');
-  
-  const outputs = component.outputs
-    .map(output => `(${output.name})="${output.name}($event)"`)
-    .join('\n            ');
-  
-  return `
-    <${component.selector}
-      ${inputs}
-      ${outputs}>
-    </${component.selector}>
-  `;
-}
-```
-
-### Non-Standalone Component Rules
-
-#### Module Detection and Import Logic
-```typescript
-// ✅ Angular 19: Components are standalone by default
-// 1. Detect component standalone status - only non-standalone if explicitly declared
-const isStandalone = !componentSource.includes('standalone: false');
-
-// 2. For non-standalone components, identify required modules
-if (!isStandalone) {
-  const requiredModules = ['CommonModule']; // Always include CommonModule
-  
-  // Check for Clarity UI usage (most common in this project)
-  if (templateHasClarityComponents(['clr-', 'cds-icon', 'clr-input'])) {
-    requiredModules.push('ClarityModule');
-  }
-  
-  // ✅ Check for Transloco usage - use project mock system
-  if (templateHasTransloco(['*transloco', 't('])) {
-    // Don't add direct TranslocoModule - use project's SdkI18nModule
-    requiredModules.push('TranslocoModule');
-    
-  }
-  
-  // Check for form directives
-  if (templateHasFormDirectives(['formControl', 'ngModel', 'formGroup'])) {
-    requiredModules.push('ReactiveFormsModule', 'FormsModule');
-  }
+// ✅ Step 1: Create interface based on component usage
+interface StoreInterface {
+  select<T>(selector: unknown): Observable<T>;
+  selectSnapshot<T>(selector: unknown): T;
+  dispatch(action: unknown): void;
 }
 
-// ✅ Path calculation utility
-function calculateRelativePathToStorybookBase(componentPath: string): string {
-  // From component path to project root, then to .storybook-base
-  const depth = componentPath.split('/').length - 1;
-  const upLevels = '../'.repeat(depth);
-  return `${upLevels}.storybook-base`;
+// ✅ Step 2: Create abstract class as injection token
+abstract class Store {
+  abstract select<T>(selector: unknown): Observable<T>;
+  abstract selectSnapshot<T>(selector: unknown): T;
+  abstract dispatch(action: unknown): void;
 }
 
-// ✅ Enhanced template analysis
-function templateHasTransloco(templateContent: string): boolean {
-  const patterns = [
-    /\*transloco\s*=\s*["']let\s+\w+["']/,  // *transloco="let t"
-    /t\(['"`][^'"`]*['"`]\)/,               // t('key')
-    /\{\{\s*.*t\(['"`][^'"`]*['"`]\).*\}\}/ // {{ t('key') }}
-  ];
-  return patterns.some(pattern => pattern.test(templateContent));
-}
-
-function templateHasClarityComponents(templateContent: string): boolean {
-  const clarityPatterns = [
-    /<clr-\w+/,           // <clr-button>, <clr-input>, etc.
-    /<cds-icon/,          // <cds-icon>
-    /clr\w+/,             // clrButton directive
-    /\[clr-\w+\]/         // [clr-modal-trigger]
-  ];
-  return clarityPatterns.some(pattern => pattern.test(templateContent));
-}
-```
-
-#### Service Dependency Injection
-```typescript
-// 1. Parse constructor dependencies
-const serviceDependencies = parseConstructorServices(componentSource);
-
-// 2. Check existing providers in .storybook-base/preview.ts
-const existingProviders = parseApplicationConfig('.storybook-base/preview.ts');
-
-// 3. Create mock services for missing dependencies
-serviceDependencies.forEach(service => {
-  if (!existingProviders.includes(service.name)) {
-    createMockService(service);
-    updatePreviewProviders(service);
-  }
-});
-
-// 4. Mock service creation pattern
-function createMockService(service) {
-  const mockFileName = `.storybook-base/mock/${service.kebabCase}.mock.ts`;
-  const mockClass = generateMockClass(service);
-  writeFile(mockFileName, mockClass);
-  updateMockIndex(service);
-}
-```
-
-#### Component Args Synchronization
-```typescript
-// Ensure args exactly match component @Input() and @Output() properties
-const componentInterface = parseComponentInterface(componentSource);
-
-const autoGeneratedArgs = {
-  // For each @Input() property
-  ...componentInterface.inputs.reduce((acc, input) => {
-    acc[input.name] = generateMockValue(input.type, input.name);
-    return acc;
-  }, {}),
+// ✅ Step 3: Implement with proper typing
+class MockStore implements StoreInterface {
+  private state = { showCardError: false };
   
-  // For each @Output() event
-  ...componentInterface.outputs.reduce((acc, output) => {
-    acc[output.name] = action(output.name);
-    return acc;
-  }, {})
-};
-```
-
-#### Translation Parameters Generation
-```typescript
-// Auto-generate translation parameters based on template analysis
-function generateStoryParameters(componentTemplate: string): { translations?: Record<string, string> } {
-  if (!hasTranslocoUsage(componentTemplate)) {
-    // ✅ No transloco usage - return empty parameters
-    return {};
-  }
-  
-  // Component uses transloco - generate translation parameters
-  const translationKeys = analyzeTranslationKeys(componentTemplate);
-  const translations: Record<string, string> = {};
-  
-  translationKeys.forEach(key => {
-    translations[key] = generateDefaultTranslation(key);
-  });
-  
-  return { translations };
-}
-
-// Conditional parameter generation
-function generateParametersSection(componentTemplate: string): string {
-  if (hasTranslocoUsage(componentTemplate)) {
-    return `,
-    // ✅ Auto-generated translations based on template analysis
-    translations: {
-      [AUTO_GENERATED_TRANSLATIONS]
-    }`;
-  }
-  
-  return ''; // No translations parameter needed
-}
-
-// Integration with existing preview.ts architecture:
-// - If translations exist: context.parameters['translations'] → mockTranslocoService.addTranslations()
-// - If no translations: MockTranslocoService uses default empty state
-```
-
-### HTML Template Analysis & Component Type Detection
-
-#### Template Parsing Strategy
-1. **Parse HTML Template**: Analyze the component's template file (.html)
-2. **Element Detection**: Identify interactive elements using CSS selectors
-3. **Attribute Analysis**: Check for Angular directives and HTML attributes
-4. **Content Analysis**: Examine element content and structure
-
-#### Interactive Element Categories
-
-**Button Elements:**
-- Standard: `<button>`, `<input type="button|submit|reset">`
-- Clarity: `<clr-button>`, `[clr-button]`, `<clr-icon-button>`
-- Custom: `[role="button"]`, elements with `(click)` handlers
-- Action triggers: `[clr-modal-trigger]`, `[clr-dropdown-trigger]`
-
-**Input Elements:**
-- Text inputs: `<input type="text|email|password|search|url">`, `<textarea>`
-- Numbers: `<input type="number|range">`
-- Selections: `<select>`, `<input type="radio|checkbox">`
-- Dates: `<input type="date|time|datetime-local">`
-- Files: `<input type="file">`
-- Clarity inputs: `<clr-input>`, `<clr-textarea>`, `<clr-select>`, `<clr-checkbox>`, `<clr-radio>`, `<clr-datepicker>`, `<clr-combobox>`
-
-**Complex Components:**
-- Forms: `<form>`, `<clr-form>`, containers with multiple inputs
-- Modals: `<clr-modal>`, `<clr-wizard>`, `[clr-modal]`
-- Data displays: `<clr-datagrid>`, `<clr-tree>`, `<clr-accordion>`
-- Navigation: `<clr-tabs>`, `<clr-stepper>`, `<clr-vertical-nav>`
-
-#### Auto-Story Generation Logic
-```typescript
-// Template analysis results determine story generation:
-const templateAnalysis = {
-  hasButtons: ['<button>', '<clr-button>', '(click)'].some(exists),
-  hasInputs: ['<input>', '<clr-input>', 'formControl'].some(exists),
-  hasForm: ['<form>', '<clr-form>', 'ngForm'].some(exists),
-  hasModal: ['<clr-modal>', '[clr-modal]'].some(exists),
-  hasDatagrid: ['<clr-datagrid>'].some(exists),
-  // ... other element types
-};
-
-// Generate stories based on detected elements with type safety
-if (templateAnalysis.hasButtons) generateButtonStories();
-if (templateAnalysis.hasInputs) generateInputStories();
-if (templateAnalysis.hasForm) generateFormStories();
-if (templateAnalysis.hasModal) generateModalStories();
-
-// Best practices for element selection:
-// 1. Use canvasElement.querySelector() for direct DOM access
-// 2. Use canvas.getByRole() for accessibility-based queries
-// 3. Add type checks: element instanceof HTMLButtonElement
-// 4. Check disabled state before interactions
-```
-
-### Story Generation Strategy
-```typescript
-// Base stories (always generated)
-- Default: Basic component with default props
-- [ComponentType]Variants: Different visual states
-
-// Interactive stories (conditional based on component type)
-- UserInteractions: For components with buttons/inputs
-- ValidationStates: For form components
-- LoadingStates: For async components
-- ErrorStates: For components with error handling
-- EmptyStates: For data display components
-
-// Advanced stories (optional based on complexity)
-- PerformanceTests: For data-heavy components
-```
-
-### Auto-Generated Controls
-```typescript
-// Type mapping for controls
-const controlMap = {
-  'string': { control: 'text' },
-  'number': { control: 'number' },
-  'boolean': { control: 'boolean' },
-  'Date': { control: 'date' },
-  "'small' | 'medium' | 'large'": { 
-    control: 'select', 
-    options: ['small', 'medium', 'large'] 
-  },
-  'Array<T>': { control: 'object' },
-  'object': { control: 'object' },
-  'Function': { control: false } // Hide function props
-};
-```
-
-## HTML Template Analysis Examples
-
-### Example 1: Complex Login Form Component
-```html
-<!-- login.component.html -->
-<clr-form>
-  <clr-input-container>
-    <label>Username</label>
-    <input clrInput type="email" [(ngModel)]="username" required />
-    <clr-control-error>Username is required</clr-control-error>
-  </clr-input-container>
-  
-  <clr-password-container>
-    <label>Password</label>
-    <input clrPassword [(ngModel)]="password" required />
-    <clr-control-error>Password is required</clr-control-error>
-  </clr-password-container>
-  
-  <clr-checkbox-wrapper>
-    <input type="checkbox" clrCheckbox [(ngModel)]="rememberMe" />
-    <label>Remember me</label>
-  </clr-checkbox-wrapper>
-  
-  <div class="btn-group">
-    <button type="submit" class="btn btn-primary" (click)="onLogin()">Login</button>
-    <button type="button" class="btn btn-outline" (click)="onCancel()">Cancel</button>
-  </div>
-</clr-form>
-```
-
-**Generated Stories for Above Template:**
-```typescript
-// Auto-detected elements: 2 inputs, 1 checkbox, 2 buttons, 1 form
-export const LoginFormInteractions: Story = {
-  ...Default,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Fill username (email input)
-    const usernameInput = canvas.getByLabelText(/username/i);
-    await userEvent.type(usernameInput, 'test@example.com');
-    
-    // Fill password
-    const passwordInput = canvas.getByLabelText(/password/i);
-    await userEvent.type(passwordInput, 'password123');
-    
-    // Check remember me
-    const rememberCheckbox = canvas.getByLabelText(/remember me/i);
-    await userEvent.click(rememberCheckbox);
-    
-    // Click login button
-    const loginButton = canvas.getByRole('button', { name: /login/i });
-    await userEvent.click(loginButton);
-  }
-};
-
-export const FormValidationFlow: Story = {
-  ...Default,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Try to submit empty form
-    const loginButton = canvas.getByRole('button', { name: /login/i });
-    await userEvent.click(loginButton);
-    
-    // Check validation errors appear
-    await expect(canvas.getByText(/username is required/i)).toBeInTheDocument();
-    await expect(canvas.getByText(/password is required/i)).toBeInTheDocument();
-    
-    // Fix validation errors
-    await userEvent.type(canvas.getByLabelText(/username/i), 'valid@email.com');
-    await userEvent.type(canvas.getByLabelText(/password/i), 'validpassword');
-    
-    // Submit again
-    await userEvent.click(loginButton);
-  }
-};
-
-export const CancelFlow: Story = {
-  ...Default,
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Fill some data
-    await userEvent.type(canvas.getByLabelText(/username/i), 'partial@email.com');
-    
-    // Click cancel
-    const cancelButton = canvas.getByRole('button', { name: /cancel/i });
-    await userEvent.click(cancelButton);
-  }
-};
-```
-
-### Example 2: Data Management Component
-```html
-<!-- user-management.component.html -->
-<clr-datagrid>
-  <clr-dg-column>Name</clr-dg-column>
-  <clr-dg-column>Email</clr-dg-column>
-  <clr-dg-column>Actions</clr-dg-column>
-  
-  <clr-dg-row *ngFor="let user of users">
-    <clr-dg-cell>{{user.name}}</clr-dg-cell>
-    <clr-dg-cell>{{user.email}}</clr-dg-cell>
-    <clr-dg-cell>
-      <clr-icon-button (click)="editUser(user)" clrTooltip="Edit">
-        <clr-icon shape="edit"></clr-icon>
-      </clr-icon-button>
-      <clr-icon-button (click)="deleteUser(user)" clrTooltip="Delete">
-        <clr-icon shape="trash"></clr-icon>
-      </clr-icon-button>
-    </clr-dg-cell>
-  </clr-dg-row>
-</clr-datagrid>
-
-<button class="btn btn-primary" (click)="openAddModal()">Add User</button>
-```
-
-**Generated Stories:**
-```typescript
-// Auto-detected: 1 datagrid, multiple icon buttons, 1 add button
-export const DatagridInteractions: Story = {
-  ...Default,
-  args: {
-    users: [
-      { id: 1, name: 'John Doe', email: 'john@example.com' },
-      { id: 2, name: 'Jane Smith', email: 'jane@example.com' }
-    ]
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    
-    // Test edit button on first row
-    const editButtons = canvas.getAllByLabelText(/edit/i);
-    if (editButtons[0] instanceof HTMLButtonElement) {
-      await userEvent.click(editButtons[0]);
-    }
-    
-    // Test delete button
-    const deleteButtons = canvas.getAllByLabelText(/delete/i);
-    if (deleteButtons[0] instanceof HTMLButtonElement) {
-      await userEvent.click(deleteButtons[0]);
-    }
-    
-    // Test add user button
-    const addButton = canvas.getByRole('button', { name: /add user/i });
-    if (addButton instanceof HTMLButtonElement) {
-      await userEvent.click(addButton);
-    }
-  }
-};
-
-export const EmptyDatagrid: Story = {
-  ...Default,
-  args: {
-    users: []
-  }
-};
-```
-
-## Template Examples
-
-### Simple Button Component Story
-```typescript
-export const ButtonStories = {
-  Default: { args: { text: 'Click me' } },
-  Primary: { args: { text: 'Primary', variant: 'primary' } },
-  Secondary: { args: { text: 'Secondary', variant: 'secondary' } },
-  Disabled: { args: { text: 'Disabled', disabled: true } },
-  Loading: { args: { text: 'Loading...', loading: true } },
-  WithIcon: { args: { text: 'With Icon', icon: 'user' } }
-};
-```
-
-### Complex Form Component Story
-```typescript
-export const FormStories = {
-  Default: { args: { mode: 'create' } },
-  EditMode: { args: { mode: 'edit', initialData: sampleData } },
-  WithValidation: { /* validation interactions */ },
-  SubmissionFlow: { /* complete form submission test */ },
-  ErrorHandling: { /* error state testing */ }
-};
-```
-
-### Storybook Decorators Best Practices
-```typescript
-// ✅ Correct decorator syntax (Method 1 - Direct function call)
-decorators: [
-  (story) => ({
-    template: `<div style="width: 400px; padding: 20px;">${story().template}</div>`,
-    moduleMetadata: {
-      imports: [ReactiveFormsModule]
-    },
-    props: story().props
-  })
-]
-
-// ✅ Correct decorator syntax (Method 2 - Story function approach)
-decorators: [
-  (storyFn) => {
-    const story = storyFn();
+  select<T>(selector: unknown): Observable<T> {
     return {
-      ...story,
-      template: `<div style="padding: 20px;">${story.template}</div>`,
-      props: {
-        ...story.props
+      subscribe: (callback: (value: T) => void) => {
+        callback(this.state.showCardError as T);
+        return { unsubscribe: () => {} };
+      }
+    };
+  }
+  
+  selectSnapshot<T>(selector: unknown): T {
+    return 'default-namespace' as T;
+  }
+  
+  dispatch(action: unknown): void {
+    // Type-safe action handling
+    const actionName = (action as { constructor: { name: string } }).constructor?.name;
+    if (actionName === 'ToggleShowCardError') {
+      this.state.showCardError = !this.state.showCardError;
+    }
+  }
+}
+```
+
+### 6. Story Generation Strategy
+```typescript
+// ✅ Generate stories based on component's actual functionality
+function generateStories(componentAnalysis: ComponentAnalysis): Story[] {
+  const stories = [
+    // Always generate Default story
+    generateDefaultStory(componentAnalysis)
+  ];
+  
+  // Conditional stories based on component features
+  if (componentAnalysis.hasInteractions) {
+    stories.push(generateInteractiveStory(componentAnalysis));
+  }
+  
+  if (componentAnalysis.hasDataVariations) {
+    stories.push(generateDataVariantsStory(componentAnalysis));
+  }
+  
+  if (componentAnalysis.hasStateVariations) {
+    stories.push(generateStateVariantsStory(componentAnalysis));
+  }
+  
+  // Avoid redundant stories - each story should test distinct functionality
+  return stories;
+}
+
+// ✅ Interactive story with userEvent
+function generateInteractiveStory(analysis: ComponentAnalysis): Story {
+  return {
+    name: 'Interactive',
+    args: { ...analysis.mockData, ...analysis.actionHandlers },
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      
+      // Use userEvent for realistic user interactions
+      const interactiveElement = canvasElement.querySelector('[data-test-id="interactive-element"]');
+      if (interactiveElement instanceof HTMLElement) {
+        await userEvent.click(interactiveElement);
+        // Verify interaction results
       }
     }
-  }
-]
-
-// ❌ Incorrect - missing function call
-decorators: [
-  (story) => ({
-    template: `<div>${story.template}</div>`, // Missing ()
-    props: story.props // Missing ()
-  })
-]
+  };
+}
 ```
 
-### Complex Render Functions
-```typescript
-// ✅ Correct - FormControl created in render function
-export const InFormContext: Story = {
-  render: (args) => {
-    const usernameControl = new FormControl('', [Validators.required]);
-    const emailControl = new FormControl('', [Validators.required, Validators.email]);
-    const passwordControl = new FormControl('', [Validators.required, Validators.minLength(8)]);
+## Element Selection Best Practices
 
-    return {
-      props: {
-        ...args,
-        usernameControl,
-        emailControl,
-        passwordControl,
-      },
-      template: `
-        <form style="max-width: 400px;">
-          <app-form-field [control]="usernameControl"></app-form-field>
-          <app-form-field [control]="emailControl"></app-form-field>
-          <app-form-field [control]="passwordControl"></app-form-field>
-        </form>
-      `,
-      moduleMetadata: {
-        imports: [ReactiveFormsModule],
-      },
-    }
-  }
-};
-
-// ❌ Incorrect - FormControl in args (causes initialization issues)
-export const InFormContext: Story = {
-  render: (args) => ({
-    props: args,
-    template: `<form>...</form>`
-  }),
-  args: {
-    usernameControl: new FormControl('', [Validators.required]) // Problem: created at module level
-  }
-};
-```
-
-## Usage Examples
-
-### Trigger Commands
-```
-Create story for LoginComponent
-Generate stories for apps/my-app/src/components/button/button.component.ts
-Auto-generate stories for UserFormComponent with interactions
-```
-
-### Generated File Structure
-```
-components/
-  button/
-    button.component.ts
-    button.component.stories.ts  // 🔄 Auto-generated
-  form/
-    user-form.component.ts
-    user-form.component.stories.ts  // 🔄 Auto-generated
-```
-
-## Advanced Features
-
-### Mock Data Generation
-```typescript
-// Auto-generate realistic mock data based on prop types
-const mockUserData = {
-  id: 1,
-  name: 'John Doe',
-  email: 'john@example.com',
-  avatar: 'https://via.placeholder.com/150',
-  role: 'admin'
-};
-```
-
-## Code Quality Best Practices
-
-### Universal Element Selection Best Practices
-
-These element selection guidelines apply to **all components** (both standalone and non-standalone):
-
-#### Data Test ID Selection
-For elements with `data-test-id` attributes, use proper CSS selectors:
-
-```typescript
-// ❌ Bad - Wrong data attribute format
-const eventList = canvas.getByTestId('event-list'); // Looks for [data-testid="event-list"]
-
-// ✅ Good - Use CSS selector for custom data attributes
-const eventList = canvasElement.querySelector('[data-test-id="event-list"]'); // Matches data-test-id
-```
-
-#### Element Selection Priority Order
-1. **CSS Selectors for custom attributes**: `canvasElement.querySelector('[data-test-id="custom-id"]')`
+### Priority Order
+1. **Data test IDs**: `canvasElement.querySelector('[data-test-id="custom-id"]')`
 2. **Semantic roles**: `canvas.getByRole('button', { name: /submit/i })`
 3. **Form labels**: `canvas.getByLabelText(/username/i)`
 4. **Element structure**: `canvasElement.querySelector('clr-datagrid')`
 5. **Avoid text content**: Never use `getByText()` for transloco content
 
-#### Common Element Selection Examples
+### Angular ng-reflect Attributes
+⚠️ **Critical**: Use correct transformed attribute names:
+
 ```typescript
-// ✅ Data test IDs (preferred for reliability)
-const filterInput = canvasElement.querySelector('[data-test-id="cci-filter-input"]');
-const addButton = canvasElement.querySelector('[data-test-id="add-btn"]');
-const listItem = canvasElement.querySelector('[data-test-id="list-item"]');
+// ❌ Wrong - Includes component prefix
+const columns = canvasElement.querySelectorAll('[ng-reflect-clr-dg-sort-by="severity"]');
 
-// ✅ Semantic roles (good for accessibility testing)
-const button = canvas.getByRole('button');
-const textbox = canvas.getByRole('textbox');
-const heading = canvas.getByRole('heading', { level: 2 });
+// ✅ Correct - Angular transforms [clrDgSortBy] → ng-reflect-sort-by
+const columns = canvasElement.querySelectorAll('[ng-reflect-sort-by="severity"]');
 
-// ✅ Form elements (when associated with labels)
-const emailInput = canvas.getByLabelText(/email/i);
-const passwordInput = canvas.getByLabelText(/password/i);
-
-// ✅ Element structure (for library components)
-const clarityModal = canvasElement.querySelector('clr-modal');
-const clarityDatagrid = canvasElement.querySelector('clr-datagrid');
-const cdsIcon = canvasElement.querySelector('cds-icon[shape="search"]');
+// Transformation: [clrDgPropertyName] → ng-reflect-property-name
+// 1. Remove component prefix (clrDg → )
+// 2. Convert camelCase to kebab-case (sortBy → sort-by)
+// 3. Add ng-reflect- prefix
 ```
 
-### Element Selection for Non-Standalone Components
-
-#### Transloco Text Content Selection
-For components using *transloco="let t" and t() function calls, avoid text-based selectors:
-
+### Transloco-Safe Selection
 ```typescript
 // ❌ Bad - Don't use text content for transloco elements
-const title = canvas.getByText('Events List'); // This text is dynamic based on translation
+const title = canvas.getByText('Events List'); // Dynamic translation
 
-// ✅ Good - Use structural selectors instead
-const titleElement = canvasElement.querySelector('h4'); // Select by element type
-const titleElement = canvasElement.querySelector('[data-test-id="events-title"]'); // Use data attributes
-const titleElement = canvas.getByRole('heading', { level: 4 }); // Use semantic roles
+// ✅ Good - Use structural selectors
+const titleElement = canvasElement.querySelector('h4');
+const titleElement = canvasElement.querySelector('[data-test-id="events-title"]');
+const titleElement = canvas.getByRole('heading', { level: 4 });
 ```
 
-### Type Safety in Stories
-Always add type checks when interacting with DOM elements:
+## Advanced Story Patterns
 
+### Shared Template Strategy
 ```typescript
-// ✅ Good - Type safe
-const button = canvas.getByRole('button');
-if (button instanceof HTMLButtonElement && !button.disabled) {
-  await userEvent.click(button);
-}
-
-// ❌ Bad - No type checking
-const button = canvas.getByRole('button');
-if (!button.disabled) {
-  await userEvent.click(button);
-}
-```
-
-## Translation Best Practices
-
-### Translation Parameters Integration
-
-The `.storybook-base/preview.ts` already includes a decorator that automatically applies translation parameters:
-
-```typescript
-// preview.ts decorator automatically handles this
-const translocoService = mockTranslocoService;
-translocoService.setActiveLang(context.globals['language']);
-if (context.parameters['translations']) {
-  translocoService.addTranslations(context.parameters['translations']);
-}
-```
-
-**Workflow:**
-1. **Template Analysis**: Parse component template for `*transloco` directive and `t('key')` patterns
-2. **Conditional Check**: Only proceed if transloco usage is detected
-3. **Auto-Generate**: Create `parameters.translations` mapping (only if needed)
-4. **Global Integration**: Preview.ts automatically applies translations to MockTranslocoService
-5. **Language Support**: Global toolbar allows switching between `en`, `fr`, `es`
-
-### Translation Key Detection Patterns
-```typescript
-// Supported patterns for automatic detection:
-*transloco="let t"                           // ✅ Transloco directive  
-{{ t('sdk.label.type') }}                    // ✅ Interpolation
-[placeholder]="t('sdk.text.placeholder')"    // ✅ Attribute binding  
-<h4>{{ t('sdkUI.eventList.title') }}</h4>    // ✅ Element content
-*ngIf="items.length === 0" {{ t('sdk.text.noItems') }}  // ✅ Conditional
-{{ placeholder || t('sdk.text.filterPlaceholder') }}    // ✅ Fallback pattern
-```
-
-### Translation Testing Best Practices
-
-#### MockTranslocoService Language Suffix Handling
-```typescript
-// ⚠️ Important: MockTranslocoService automatically adds language suffixes
-// - English: "Filter..." → "Filter... [EN]"  
-// - French: "Filter..." → "Filter... [FR]"
-// - Spanish: "Filter..." → "Filter... [ES]"
-
-// ✅ Flexible testing for translated content
-export const Default: Story = {
-  args: { placeholder: '' }, // Empty - triggers translation
-  play: async ({ canvasElement }) => {
-    const input = canvasElement.querySelector('[data-test-id="input"]');
-    if (input instanceof HTMLInputElement) {
-      const placeholder = input.getAttribute('placeholder');
-      // Use regex to handle language suffix
-      await expect(placeholder).toMatch(/^Filter\.\.\./);
-    }
-  }
-};
-
-// ✅ Exact testing for custom content  
-export const WithCustomPlaceholder: Story = {
-  args: { placeholder: 'Search products...' }, // Custom - no translation
-  play: async ({ canvasElement }) => {
-    const input = canvasElement.querySelector('[data-test-id="input"]');
-    if (input instanceof HTMLInputElement) {
-      // Custom values are used exactly as provided
-      await expect(input).toHaveAttribute('placeholder', 'Search products...');
-    }
-  }
+// ✅ When multiple stories need similar templates, use Meta decorators
+const meta: Meta<ComponentName> = {
+  decorators: [
+    moduleMetadata({ /* shared config */ }),
+    // Shared template wrapper for multiple stories
+    (storyFn, context) => ({
+      template: `
+        <div class="story-wrapper">
+          <h6>{{ context.name }}</h6>
+          <ng-container [ngTemplateOutlet]="storyTemplate"></ng-container>
+        </div>
+        <ng-template #storyTemplate>
+          ${storyFn().template}
+        </ng-template>
+      `,
+      props: storyFn().props
+    })
+  ]
 };
 ```
 
-#### Conditional Logic in Templates
+### Action Integration
 ```typescript
-// Template pattern: {{ placeholder || t('translation.key') }}
-// Logic: If placeholder exists → use it, else → call translation
-
-function generateTranslationTestStrategy(templateContent: string): string {
-  const hasFallbackPattern = /\{\{\s*\w+\s*\|\|\s*t\(['"`][^'"`]*['"`]\)\s*\}\}/.test(templateContent);
-  
-  if (hasFallbackPattern) {
-    return `
-    // ✅ Test both translation and custom value scenarios
-    
-    // Translation scenario (empty custom value)
-    const placeholder = input.getAttribute('placeholder');
-    await expect(placeholder).toMatch(/^[EXPECTED_TRANSLATION]/);
-    
-    // Custom value scenario (provided custom value)  
-    await expect(input).toHaveAttribute('placeholder', '[CUSTOM_VALUE]');
-    `;
+// ✅ Capture all @Output() events with context
+argTypes: {
+  storageClassChange: {
+    action: 'storageClassChange',
+    description: 'Emitted when storage class selection changes'
   }
-  
-  return `
-    // ✅ Direct translation testing
-    await expect(element).toHaveTextContent(/^[EXPECTED_TRANSLATION]/);
-  `;
+},
+
+// ✅ In stories
+args: {
+  storageClassChange: action('storageClassChange')
 }
 ```
 
-### Components Without Transloco
+### Type Safety
 ```typescript
-// Example: Simple component with no internationalization
-// Template: <button>{{ label }}</button>
-// Result: No parameters.translations generated
-
-const meta: Meta<SimpleButtonComponent> = {
-  title: 'Components/SimpleButton',
-  component: SimpleButtonComponent,
-  parameters: {
-    layout: 'centered',
-    docs: {
-      description: {
-        component: 'Simple button component with no translations'
-      }
-    }
-    // ✅ No translations parameter - component doesn't use transloco
-  },
-  // ... rest of configuration
-};
-```
-
-### Story-Specific Translation Overrides
-```typescript
-// Individual stories can override or extend translations
-export const CustomTranslations: StoryObj<MyComponent> = {
-  args: { /* ... */ },
-  parameters: {
-    translations: {
-      // Extend base translations
-      'sdk.label.customField': 'Custom Field Label',
-      'component.specific.message': 'Component-specific message'
-    }
-  }
-};
-```
-
-### Multi-Language Testing Strategy
-```typescript
-// Language-specific stories for comprehensive testing
-export const EnglishDefault: StoryObj<MyComponent> = {
-  args: { /* ... */ },
-  parameters: { translations: baseTranslations }
-};
-
-export const FrenchLocalization: StoryObj<MyComponent> = {
-  args: { /* ... */ },
-  parameters: { 
-    translations: {
-      ...baseTranslations,
-      'sdk.label.type': 'Type',  // MockTranslocoService will auto-append [FR] when language is 'fr'
-      'sdk.label.status': 'Statut'
-    }
-  },
-  play: async ({ canvasElement }) => {
-    // Verify French translations appear correctly with [FR] suffix
-    const typeLabel = canvasElement.querySelector('[data-test-id="type-label"]');
-    await expect(typeLabel).toHaveTextContent(/Type \[FR\]/);
-  }
-};
-```
-
-### Element Selection Best Practices
-Use the appropriate method for element selection:
-
-```typescript
-// For direct DOM access (Clarity components)
-const spinner = canvasElement.querySelector('clr-spinner');
-const clrButtons = canvasElement.querySelectorAll('clr-button');
-
-// For accessibility-based queries (semantic elements)
-const button = canvas.getByRole('button');
-const textInput = canvas.getByLabelText(/username/i);
-
-// For testing library queries
-const canvas = within(canvasElement);
-```
-
-### Input Type Safety
-Add type guards for input elements:
-
-```typescript
+// ✅ Always include type guards
 const input = canvas.getByLabelText(/email/i);
 if (input instanceof HTMLInputElement) {
   await userEvent.type(input, 'test@example.com');
@@ -1688,213 +650,193 @@ if (input instanceof HTMLInputElement) {
 }
 ```
 
-### Error Prevention
-Always check element existence and state:
+## Template Module Management
+
+### Smart Module Import Strategy
 
 ```typescript
-// Check if element exists and is correct type
-const modalTrigger = canvasElement.querySelector('[clr-modal-trigger]');
-if (modalTrigger instanceof HTMLElement) {
-  await userEvent.click(modalTrigger);
+// ✅ Decision Tree for Module Imports
+function analyzeTemplateModuleNeeds(stories: Story[]): ModuleStrategy {
+  const storiesWithCustomTemplates = stories.filter(s => s.render);
+  const moduleRequirements = storiesWithCustomTemplates.map(story => 
+    analyzeTemplateModules(story.render.template)
+  );
+  
+  const commonModules = findCommonModules(moduleRequirements);
+  const specificModules = findSpecificModules(moduleRequirements);
+  
+  if (commonModules.length > 0 && storiesWithCustomTemplates.length > stories.length / 2) {
+    return {
+      strategy: 'global',
+      globalModules: commonModules,
+      specificStories: specificModules
+    };
+  }
+  
+  return {
+    strategy: 'individual',
+    storyModules: moduleRequirements
+  };
 }
 
-// Check disabled state before interaction
-if (button instanceof HTMLButtonElement && !button.disabled) {
-  await userEvent.click(button);
-}
+// ✅ Template analysis patterns
+const MODULE_PATTERNS = {
+  FormsModule: [
+    '[(ngModel)]',     // Two-way binding
+    '[ngModel]',       // One-way binding
+    '(ngModelChange)', // Model change event
+    'ngForm',          // Form directive
+    'ngModel'          // Model directive
+  ],
+  CommonModule: [
+    '*ngFor',          // Structural directive
+    '*ngIf',           // Structural directive
+    '*ngSwitch',       // Structural directive
+    '| async',         // Async pipe
+    '| json'           // JSON pipe
+  ],
+  ClarityModule: [
+    'clr-',            // Clarity components
+    'cds-',            // Clarity design system
+    '[clr',            // Clarity directives
+    '(clr'             // Clarity events
+  ]
+};
 ```
 
-### Storybook Syntax Corrections
+### Implementation Examples
 
-#### Decorator Function Calls and Template Optimization
-Always call story functions in decorators and use common templates to reduce duplication:
 
+
+
+
+#### Global Module Import
 ```typescript
-// ✅ Best Practice - Common template in decorator (Recommended)
-decorators: [
-  moduleMetadata({ imports: [CommonModule] }),
-  (storyFn) => {
-    const story = storyFn();
-    return {
-      ...story,
-      template: `
-        <my-component
-          [prop1]="prop1"
-          [prop2]="prop2"
-          (event1)="event1($event)"
-          (event2)="event2($event)">
-        </my-component>
-      `,
-    };
-  },
-]
-
-// Stories become much cleaner
-export const Default: Story = {
-  args: { prop1: 'value', prop2: false },
+// ✅ When majority of stories need same modules
+const meta: Meta<ComponentName> = {
+  decorators: [
+    moduleMetadata({
+      imports: [CommonModule, FormsModule, ClarityModule, ComponentName],
+    }),
+  ],
 };
 
-// ✅ Correct - call story() function (Alternative Method)
-decorators: [
-  (story) => ({
-    template: `<div>${story().template}</div>`,
-    props: story().props,
-    moduleMetadata: { imports: [SomeModule] }
-  })
-]
-
-// ✅ Override template only when needed
-export const CustomLayout: Story = {
-  args: { prop1: 'custom' },
-  render: (args) => ({
-    props: args,
-    template: `
-      <div class="wrapper">
-        <my-component [prop1]="prop1"></my-component>
-      </div>
-    `,
-  }),
-};
-
-// ❌ Incorrect - missing function calls
-decorators: [
-  (story) => ({
-    template: `<div>${story.template}</div>`, // Missing ()
-    props: story.props // Missing ()
-  })
-]
-
-// ❌ Inefficient - repetitive templates in every story
+// Individual stories don't need decorators
 export const Story1: Story = {
-  render: (args) => ({
-    props: args,
-    template: `<my-component [prop1]="prop1" [prop2]="prop2"></my-component>` // Repeated
-  })
+  render: (args) => ({ template: `<component [(ngModel)]="data">` })
 };
 
 export const Story2: Story = {
-  render: (args) => ({
-    props: args,
-    template: `<my-component [prop1]="prop1" [prop2]="prop2"></my-component>` // Repeated again
-  })
+  render: (args) => ({ template: `<component *ngFor="let item of items">` })
 };
 ```
 
-#### Action Configuration for Events
-Properly configure actions for @Output() events:
+### Best Practices
 
+1. **Analyze Template Requirements**: Check each custom template for module dependencies
+2. **Count Usage**: If >50% of stories need same modules, use global import
+3. **Minimize Imports**: Only import modules actually used in templates
+4. **Performance**: Individual imports are lighter for few stories
+5. **Maintainability**: Global imports reduce duplication for many stories
+
+## Translation Testing
+
+### MockTranslocoService Integration
 ```typescript
-// ✅ Correct - Configure actions in both argTypes and args
-const meta: Meta<ComponentType> = {
-  argTypes: {
-    // Configure action in argTypes for automatic detection
-    primaryClick: {
-      action: 'primaryClick'
-    },
-    secondaryClick: {
-      action: 'secondaryClick'
-    }
-  },
-  args: {
-    // Also bind action handlers in args
-    primaryClick: action('primaryClick'),
-    secondaryClick: action('secondaryClick')
+// ✅ Use parameters.translations (handled by .storybook-base/preview.ts)
+parameters: {
+  translations: {
+    'sdk.label.type': 'Type',
+    'sdk.label.status': 'Status',
+    // ... extracted from template analysis
   }
-};
+}
 
-// ❌ Incorrect - only args without argTypes action config
-const meta: Meta<ComponentType> = {
-  args: {
-    primaryClick: action('primaryClick'), // Actions may not be captured
-    secondaryClick: action('secondaryClick')
-  }
-};
+// ✅ Test translated content with language suffixes
+// MockTranslocoService adds [EN], [FR], [ES] suffixes
+await expect(placeholder).toMatch(/^Filter\.\.\./); // Flexible for suffix
+await expect(input).toHaveAttribute('placeholder', 'Custom Value'); // Exact for custom
 ```
 
-#### Default Args Configuration
-Include meaningful default values in args:
+## Key Optimizations (Type Safety First Strategy)
 
-```typescript
-// ✅ Correct - Include default values for better story display
-const meta: Meta<ModalComponent> = {
-  args: {
-    title: 'Sample Modal',
-    primaryButtonText: 'Confirm',
-    secondaryButtonText: 'Cancel',
-    isOpen: true, // Default to open for better visualization
-    primaryClick: action('primaryClick'),
-    secondaryClick: action('secondaryClick')
-  }
-};
+1. **Real Types Always**: Import component's actual types from their exact paths, never use `any`
+   ```typescript
+   // ✅ ALWAYS: Use component's exact import paths
+   import { MfeConfigBaseModel } from './mfe-config.model'; // Local path from component
+   import { KubernetesResourceType } from '@cci/sdk-utils'; // External from component
+   const mockConfig: MfeConfigBaseModel = { /* all required props */ }
+   
+   // ❌ NEVER: Use any type
+   const mockConfig: any = { /* props */ }
+   const mockConfig = { /* props */ } as any
+   ```
 
-// ❌ Incorrect - Empty or minimal args
-const meta: Meta<ModalComponent> = {
-  args: {
-    primaryClick: action('primaryClick'),
-    secondaryClick: action('secondaryClick')
-    // Missing default values for better UX
-  }
-};
-```
+2. **Direct Type Assignment**: No type assertions needed with proper typing
+   ```typescript
+   // ✅ Direct assignment with correct types
+   const mockServiceConfig: MfeConfigBaseModel = { pathName: 'test', /* ... */ };
+   args: { serviceConfig: mockServiceConfig }
+   
+   // ❌ Avoid type assertions if proper typing is used
+   args: { serviceConfig: mockData as MfeConfigBaseModel }
+   ```
 
-#### Render Function Best Practices
-Create complex objects inside render functions, not in args:
+3. **Smart Service Strategy**: Check global providers first, then configure parameters
+   ```typescript
+   // ✅ Step 1: Check @storybook-config/preview.ts for global services
+   // - TranslocoService: Use parameters.translations for i18n content
+   // - Store (@ngxs/store): Use parameters.storeSelectors/storeReducers for state
+   
+   // ✅ Step 2: For TranslocoService - Configure translations in parameters
+   parameters: {
+     translations: {
+       'sdkUI.errorAlert.serviceNotAvailable': 'Service not available',
+       'sdkUI.errorAlert.showError': 'Show Error',
+       'sdkUI.errorAlert.hideError': 'Hide Error',
+     }
+   }
+   
+   // ✅ Step 3: For Store service - Use global Store with parameters configuration
+   parameters: {
+     storeSelectors: [
+       {
+         selector: PublicUserStateSelectors.showCardError,
+         initialValue: false,
+       },
+     ],
+     storeReducers: [
+       {
+         actionType: ToggleShowCardError,
+         selector: PublicUserStateSelectors.showCardError,
+         handler: (current: boolean) => !current,
+       },
+     ],
+   }
+   
+   // ✅ Step 4: Only create local mocks for services NOT in global providers
+   // Check component injection vs preview.ts providers before mocking
+   ```
 
-```typescript
-// ✅ Correct - FormControl created in render function
-export const WithFormControls: Story = {
-  render: (args) => {
-    const control = new FormControl('', [Validators.required]);
-    return {
-      props: { ...args, control },
-      template: `<app-component [control]="control"></app-component>`
-    };
-  }
-};
-
-// ❌ Incorrect - FormControl in args (module-level instantiation)
-export const WithFormControls: Story = {
-  args: {
-    control: new FormControl('', [Validators.required]) // Problem!
-  }
-};
-```
-
-#### Module Imports in Custom Renders
-Always include necessary imports when using custom templates:
-
-```typescript
-// ✅ Correct - includes moduleMetadata
-render: (args) => ({
-  props: args,
-  template: `<custom-template>...</custom-template>`,
-  moduleMetadata: {
-    imports: [ReactiveFormsModule, CustomModule]
-  }
-})
-
-// ❌ Incorrect - missing required imports
-render: (args) => ({
-  props: args,
-  template: `<custom-template>...</custom-template>`
-  // Missing moduleMetadata
-})
-```
-## Complete Translation Integration Example
-
-
-### Project-Specific Optimizations
-
-1. **Dependency Management**: Always use project's mock system instead of external packages
-2. **Layout Consistency**: Standardize wrapper styles and layout parameters
-3. **Test Robustness**: Handle MockTranslocoService language suffixes gracefully
-4. **Path Calculation**: Automate relative path calculation for consistent imports
-5. **Documentation Control**: Comment out autodocs by default, enable per project needs
-6. **Element Selection**: Prioritize `[data-test-id]` for transloco-safe testing
-7. **Story Structure**: Limit to 5 focused stories covering key scenarios
-8. **Type Safety**: Always include type guards for DOM element interactions
-9. **Universal Element Selection**: Use consistent element selection patterns for both standalone and non-standalone components
+4. **Minimal Mock Strategy**: Create minimal mocks only when real dependencies are unavailable
+5. **Template Module Strategy**: Smart module importing for custom templates
+   ```typescript
+   // ✅ Individual story approach - only import what's needed
+   export const StoryWithNgModel: Story = {
+     decorators: [moduleMetadata({ imports: [FormsModule, ComponentName] })],
+     render: (args) => ({ template: `<component [(ngModel)]="data">` })
+   };
+   
+   // ✅ Global approach - if majority of stories need same modules
+   const meta: Meta = {
+     decorators: [moduleMetadata({ imports: [CommonModule, FormsModule] })]
+   };
+   ```
+6. **Action Integration**: Use `@storybook/addon-actions` for all @Output() events  
+7. **Transloco Detection**: Critical for component display - detect `*transloco="let t"` patterns
+8. **Feature-Based Stories**: Generate stories based on actual functionality, avoid redundancy
+9. **UserEvent Integration**: Use userEvent for realistic user interactions
 
 ---
 
-**Note**: This rule analyzes TypeScript component files and automatically generates comprehensive, interactive stories with proper controls, actions, and interaction tests using type-safe best practices. Optimized for **Angular 19** where components are standalone by default, it provides full support for both standalone (default) and non-standalone (explicitly declared `standalone: false`) Angular components with proper module imports, service mocking, transloco-safe element selection, and conditional translation parameter generation (only when components actually use transloco).
+**Note**: This rule prioritizes **real dependencies over mocks** to generate accurate, maintainable stories. Optimized for **Angular 19** with path aliases, type assertions, and minimal mock strategy when real dependencies are unavailable.
