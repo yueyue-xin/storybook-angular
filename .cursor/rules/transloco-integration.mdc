@@ -1,0 +1,424 @@
+---
+description: "Transloco i18n integration and translation key extraction"
+globs: ["**/*.stories.ts", "**/*.component.html", "**/*.component.ts"]
+alwaysApply: false
+---
+
+# Transloco Integration Rules
+
+## Purpose
+Extract translation keys from component templates and generate `parameters.translations` configuration for MockTranslocoService. Ensure proper element selection strategies that work with language suffixes.
+
+## Trigger
+- After `component-analysis.mdc` detects transloco usage
+- When template contains `*transloco`, `| transloco`, or `.translate()`
+- Before story template generation
+
+---
+
+## Translation Key Extraction
+
+### 1. Detection Patterns
+
+```typescript
+// Pattern 1: Structural directive with let binding
+<div *transloco="let t">
+  {{ t('sdk.label.title') }}
+  {{ t('sdk.label.description') }}
+</div>
+
+// Pattern 2: Transloco pipe
+<h1>{{ 'sdk.label.welcome' | transloco }}</h1>
+<p>{{ 'sdk.message.greeting' | transloco }}</p>
+
+// Pattern 3: Service method in TS
+this.transloco.translate('sdk.action.save');
+this.transloco.selectTranslate('sdk.status.loading').subscribe();
+
+// Pattern 4: Transloco pipe with params
+<span>{{ 'sdk.message.hello' | transloco: { name: user.name } }}</span>
+```
+
+### 2. Key Extraction Logic
+
+```typescript
+function extractTranslationKeys(
+  template: string, 
+  componentSource: string
+): string[] {
+  const keys: Set<string> = new Set();
+  
+  // Extract from t('key') in templates
+  const tFunctionMatches = template.match(/t\(['"`]([^'"`]+)['"`]\)/g);
+  if (tFunctionMatches) {
+    tFunctionMatches.forEach(match => {
+      const key = match.match(/['"`]([^'"`]+)['"`]/)?.[1];
+      if (key) keys.add(key);
+    });
+  }
+  
+  // Extract from | transloco pipe
+  const pipeMatches = template.match(/['"`]([^'"`]+)['"`]\s*\|\s*transloco/g);
+  if (pipeMatches) {
+    pipeMatches.forEach(match => {
+      const key = match.match(/['"`]([^'"`]+)['"`]/)?.[1];
+      if (key) keys.add(key);
+    });
+  }
+  
+  // Extract from .translate() in TS
+  const serviceMatches = componentSource.match(/\.translate\(['"`]([^'"`]+)['"`]\)/g);
+  if (serviceMatches) {
+    serviceMatches.forEach(match => {
+      const key = match.match(/['"`]([^'"`]+)['"`]/)?.[1];
+      if (key) keys.add(key);
+    });
+  }
+  
+  return Array.from(keys).sort();
+}
+```
+
+---
+
+## Translation Parameters Generation
+
+### 1. Basic Configuration
+
+```typescript
+// Extracted keys: ['sdk.label.title', 'sdk.label.status', 'sdk.action.submit']
+
+// Generated parameters:
+parameters: {
+  translations: {
+    'sdk.label.title': 'Title',
+    'sdk.label.status': 'Status',
+    'sdk.action.submit': 'Submit'
+  }
+}
+```
+
+### 2. Default Translation Values
+
+```typescript
+// Generate English default from key
+function generateDefaultTranslation(key: string): string {
+  // Split by dot, take last segment
+  const segments = key.split('.');
+  const lastSegment = segments[segments.length - 1];
+  
+  // Convert camelCase or snake_case to Title Case
+  return lastSegment
+    .replace(/([A-Z])/g, ' $1')  // camelCase
+    .replace(/_/g, ' ')           // snake_case
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+    .trim();
+}
+
+// Examples:
+// 'sdk.label.userName' → 'User Name'
+// 'sdk.action.save_draft' → 'Save Draft'
+// 'sdk.status.loading' → 'Loading'
+```
+
+### 3. Nested Keys
+
+```typescript
+// Nested translation structure
+parameters: {
+  translations: {
+    'sdk.label.user.firstName': 'First Name',
+    'sdk.label.user.lastName': 'Last Name',
+    'sdk.label.user.email': 'Email',
+  }
+}
+
+// MockTranslocoService handles nested keys automatically
+```
+
+---
+
+## Dynamic Translation Keys
+
+### 1. Detection
+
+```typescript
+// Template uses dynamic keys (variables)
+<span>{{ t(dynamicKey) }}</span>
+<span>{{ t('sdk.label.' + type) }}</span>
+
+// Cannot extract statically - keys determined at runtime
+```
+
+### 2. Fallback Strategy
+
+```typescript
+// Add common translations + TODO for developer
+parameters: {
+  translations: {
+    // TODO: Add dynamic translation keys manually
+    // Template uses: t(dynamicKey) or t('sdk.label.' + type)
+    // Cannot extract keys statically
+    
+    // Common fallback keys:
+    'common.loading': 'Loading...',
+    'common.error': 'Error',
+    'common.success': 'Success',
+    'common.save': 'Save',
+    'common.cancel': 'Cancel',
+    'common.delete': 'Delete',
+    'common.edit': 'Edit',
+    'common.close': 'Close',
+  }
+}
+```
+
+---
+
+## MockTranslocoService Behavior
+
+### 1. Language Suffix
+
+```typescript
+// MockTranslocoService adds language suffix to translations
+// Defined in @storybook-config/mock/transloco.mock.ts
+
+// Configuration:
+// - English: [EN]
+// - French: [FR]
+// - Spanish: [ES]
+
+// Example:
+// Input key: 'sdk.label.title'
+// Input value: 'Title'
+// Output: 'Title [EN]'
+```
+
+### 2. Missing Key Handling
+
+```typescript
+// When translation key not in parameters.translations
+// MockTranslocoService returns: '[MISSING: key.name] [EN]'
+
+// Example:
+// Key 'sdk.unknown.key' not provided
+// Rendered as: '[MISSING: sdk.unknown.key] [EN]'
+```
+
+---
+
+## Element Selection Strategies
+
+### 1. Avoid Text-Based Selectors
+
+```typescript
+// ❌ Bad - Will fail with language suffixes
+play: async ({ canvasElement }) => {
+  const button = within(canvasElement).getByText('Submit');  // Fails!
+  // Actual text: 'Submit [EN]'
+};
+
+// ❌ Bad - Exact text match
+await expect(button).toHaveTextContent('Submit');  // Fails!
+```
+
+### 2. Use Structural Selectors
+
+```typescript
+// ✅ Good - data-test-id
+play: async ({ canvasElement }) => {
+  const button = canvasElement.querySelector('[data-test-id="submit-button"]');
+  await expect(button).toBeInTheDocument();
+};
+
+// ✅ Good - role-based (without text)
+const button = within(canvasElement).getByRole('button');
+
+// ✅ Good - element structure
+const heading = canvasElement.querySelector('h1');
+```
+
+### 3. Flexible Text Matching
+
+```typescript
+// ✅ Good - Regex for partial match
+await expect(button).toHaveTextContent(/^Submit/);  // Matches 'Submit [EN]'
+await expect(button?.textContent).toMatch(/Submit/);
+
+// ✅ Good - Contains check
+expect(button?.textContent).toContain('Submit');
+```
+
+---
+
+## Translation with Parameters
+
+### 1. Parameterized Translations
+
+```typescript
+// Template with params
+<span>{{ 'sdk.message.welcome' | transloco: { name: userName } }}</span>
+
+// Parameters configuration
+parameters: {
+  translations: {
+    'sdk.message.welcome': 'Welcome, {{name}}!'
+  }
+}
+
+// MockTranslocoService interpolates:
+// Input: { name: 'John' }
+// Output: 'Welcome, John! [EN]'
+```
+
+### 2. Plural Translations
+
+```typescript
+// Template with plural
+<span>{{ 'sdk.message.itemCount' | transloco: { count: items.length } }}</span>
+
+// Parameters configuration
+parameters: {
+  translations: {
+    'sdk.message.itemCount': '{{count}} items'
+  }
+}
+
+// Output: '5 items [EN]'
+```
+
+---
+
+## SdkI18nModule Import
+
+### 1. Module Configuration
+
+```typescript
+// Import MockTranslocoService provider module
+import { SdkI18nModule } from '@storybook-config/mock';
+
+// Add to decorators
+decorators: [
+  moduleMetadata({
+    imports: [
+      SdkI18nModule,  // Provides MockTranslocoService globally
+    ]
+  })
+]
+```
+
+**Note**: SdkI18nModule is imported by `dependency-resolution.mdc`, this rule only generates translations.
+
+---
+
+## Output Structure
+
+```typescript
+interface TranslocoIntegration {
+  // Whether component uses transloco
+  usesTransloco: boolean;
+  
+  // Extracted translation keys
+  translationKeys: string[];
+  
+  // Generated translations parameter
+  translations: {
+    [key: string]: string;
+  };
+  
+  // Dynamic keys that couldn't be extracted
+  dynamicKeys: {
+    pattern: string;
+    todoMessage: string;
+  }[];
+  
+  // Element selection warnings
+  warnings: {
+    message: string;
+    recommendation: string;
+  }[];
+}
+```
+
+---
+
+## Integration
+
+### Inputs from:
+- `component-analysis.mdc` → Template content, transloco usage detection
+- `service-mocking-strategy.mdc` → Confirmation that TranslocoService is global
+
+### Outputs to:
+- `story-template-generation.mdc` → parameters.translations configuration
+- `interactive-stories.mdc` → Element selection guidance (avoid text-based)
+- `error-handling-and-validation.mdc` → Dynamic key TODOs
+
+### Error Handling:
+- No keys extracted but transloco detected → Add common fallbacks with TODO
+- Dynamic keys found → Add TODO for manual addition
+- Nested keys → Generate flat structure with dot notation
+
+---
+
+## Best Practices
+
+1. **Extract All Keys**: Scan template and TS file thoroughly
+2. **Sorted Keys**: Keep translation keys alphabetically sorted
+3. **Meaningful Defaults**: Generate readable English defaults from keys
+4. **Flexible Assertions**: Use regex or `contains` for text matching
+5. **Structural Selectors**: Prefer data-test-id over text content
+6. **Document Suffixes**: Remind developer about [EN]/[FR]/[ES] suffixes
+7. **Common Fallbacks**: Always provide common translations for dynamic keys
+
+---
+
+## Example Output
+
+```typescript
+// Component template:
+// <div *transloco="let t">
+//   <h1>{{ t('sdk.label.title') }}</h1>
+//   <button>{{ t('sdk.action.save') }}</button>
+// </div>
+
+// Generated story configuration:
+import { SdkI18nModule } from '@storybook-config/mock';
+
+const meta: Meta<ComponentName> = {
+  decorators: [
+    moduleMetadata({
+      imports: [SdkI18nModule]
+    })
+  ],
+  parameters: {
+    translations: {
+      'sdk.label.title': 'Title',
+      'sdk.action.save': 'Save'
+    }
+  }
+};
+
+// Generated play function with safe selectors:
+export const Default: Story = {
+  play: async ({ canvasElement }) => {
+    // ✅ Structural selector
+    const title = canvasElement.querySelector('h1');
+    await expect(title).toBeInTheDocument();
+    
+    // ✅ Flexible text matching (accounts for [EN] suffix)
+    await expect(title).toHaveTextContent(/^Title/);
+    
+    // ✅ data-test-id preferred
+    const button = canvasElement.querySelector('[data-test-id="save-button"]');
+    if (button) {
+      await expect(button).toHaveTextContent(/^Save/);
+    }
+  }
+};
+```
+
+---
+
+**Note**: MockTranslocoService is globally configured in `@storybook-config/preview.ts`. This rule only generates the translations parameter.

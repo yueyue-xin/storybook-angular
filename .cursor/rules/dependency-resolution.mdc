@@ -1,0 +1,422 @@
+---
+description: "Dependency resolution and import strategy for story generation"
+globs: ["**/*.stories.ts", "**/*.component.ts"]
+alwaysApply: false
+---
+
+# Dependency Resolution Rules
+
+## Purpose
+Analyze component dependencies and determine optimal import strategy for story files. Detects required modules, pipes, directives, and custom components.
+
+## Trigger
+- After `component-analysis.mdc` completes
+- When generating story imports and moduleMetadata
+- When template uses external dependencies
+
+---
+
+## Resolution Strategy
+
+### Priority Order
+1. **Framework modules** (CommonModule, FormsModule, ClarityModule)
+2. **Real imports** (actual files from component)
+3. **Path aliases** (from tsconfig.json)
+4. **TODO markers** (when import fails)
+
+**Never generate mocks** - if import fails, add TODO for developer to fix.
+
+---
+
+## Module Detection
+
+### 1. Framework Modules
+
+```typescript
+// Detect based on template patterns
+const MODULE_PATTERNS = {
+  CommonModule: /\*ngFor|\*ngIf|\*ngSwitch|\| async|\| json/,
+  FormsModule: /\[(ngModel)\]|\[ngModel\]|\(ngModelChange\)|ngForm/,
+  ClarityModule: /<clr-|<cds-|\[clr|\(clr/,
+  ReactiveFormsModule: /\[formGroup\]|\[formControl\]|formControlName/,
+};
+
+// Check template content
+function detectRequiredModules(template: string): string[] {
+  const modules = [];
+  
+  if (MODULE_PATTERNS.CommonModule.test(template)) {
+    modules.push('CommonModule');
+  }
+  
+  if (MODULE_PATTERNS.FormsModule.test(template)) {
+    modules.push('FormsModule');
+  }
+  
+  if (MODULE_PATTERNS.ClarityModule.test(template)) {
+    modules.push('ClarityModule');
+  }
+  
+  if (MODULE_PATTERNS.ReactiveFormsModule.test(template)) {
+    modules.push('ReactiveFormsModule');
+  }
+  
+  return modules;
+}
+```
+
+### 2. Import Statement Generation
+
+```typescript
+// Generate import statements for detected modules
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { ClarityModule } from '@clr/angular';
+```
+
+---
+
+## Pipe Resolution
+
+### 1. Built-in vs Custom Pipes
+
+```typescript
+// Extract pipes from template
+const pipeMatches = template.match(/\|\s*(\w+)/g);
+
+// Built-in Angular pipes (no import needed)
+const BUILTIN_PIPES = [
+  'date', 'json', 'uppercase', 'lowercase', 
+  'currency', 'decimal', 'percent', 'slice',
+  'async', 'keyvalue', 'titlecase'
+];
+
+// Classify pipes
+function classifyPipes(pipes: string[]): {
+  builtin: string[];
+  custom: string[];
+} {
+  return {
+    builtin: pipes.filter(p => BUILTIN_PIPES.includes(p)),
+    custom: pipes.filter(p => !BUILTIN_PIPES.includes(p))
+  };
+}
+```
+
+### 2. Custom Pipe Import Strategy
+
+```typescript
+// For custom pipes, use component's import path
+// From component: import { SortByPipe } from '../pipes/sort-by.pipe';
+
+// In story:
+import { SortByPipe } from '../pipes/sort-by.pipe';
+
+// If import fails:
+// TODO: Import content failed
+// Expected: import { SortByPipe } from '../pipes/sort-by.pipe'
+// Developer action required: Verify pipe exists and path is correct
+```
+
+### 3. Pipe Standalone Detection
+
+```typescript
+// Check if pipe is standalone (Angular 19 default)
+function isPipeStandalone(pipeSource: string): boolean {
+  return !pipeSource.includes('standalone: false');
+}
+
+// Place in correct array:
+decorators: [
+  moduleMetadata({
+    imports: [
+      StandalonePipe,  // standalone: true or no declaration
+    ],
+    declarations: [
+      LegacyPipe,      // standalone: false
+    ]
+  })
+]
+```
+
+---
+
+## Component Dependencies
+
+### 1. Custom Component Detection
+
+```typescript
+// Detect non-framework components in template
+// Pattern: <custom-selector> or <app-selector>
+const customComponents = template.match(/<([a-z]+-[a-z\-]+)/g);
+
+// Filter out framework components
+const FRAMEWORK_PREFIXES = ['clr-', 'cds-', 'ng-', 'mat-'];
+
+function isCustomComponent(selector: string): boolean {
+  return !FRAMEWORK_PREFIXES.some(prefix => 
+    selector.startsWith(prefix)
+  );
+}
+```
+
+### 2. Component Import Resolution
+
+```typescript
+// Try to resolve from component's imports
+// From component: import { AvatarComponent } from '../avatar/avatar.component';
+
+// In story:
+import { AvatarComponent } from '../avatar/avatar.component';
+
+// Check standalone status
+decorators: [
+  moduleMetadata({
+    imports: [
+      AvatarComponent,  // if standalone: true
+    ],
+    declarations: [
+      // if standalone: false
+    ]
+  })
+]
+```
+
+### 3. Unresolved Components
+
+```typescript
+// If component import cannot be resolved
+// TODO: Import content failed
+// Expected: import { CustomComponent } from 'path/to/custom.component'
+// 
+// Detected in template: <custom-component>
+// 
+// Developer action required:
+// 1. Locate the component file
+// 2. Add import statement
+// 3. Add to moduleMetadata.imports (if standalone) or .declarations (if not)
+```
+
+---
+
+## Transloco Integration
+
+### 1. Transloco Detection
+
+```typescript
+// Check for transloco usage patterns
+const hasTransloco = 
+  /\*transloco\s*=/.test(template) ||      // Structural directive
+  /\|\s*transloco/.test(template) ||       // Pipe
+  /\.translate\(/.test(componentSource);   // Service method
+
+if (hasTransloco) {
+  // Import SdkI18nModule (provides MockTranslocoService)
+  imports.push('SdkI18nModule');
+}
+```
+
+### 2. Import Statement
+
+```typescript
+// Use path alias for mock module
+import { SdkI18nModule } from '@storybook-config/mock';
+
+decorators: [
+  moduleMetadata({
+    imports: [
+      SdkI18nModule,  // Provides MockTranslocoService globally
+    ]
+  })
+]
+```
+
+**Note**: Translation keys are handled by `transloco-integration.mdc`, this rule only handles module import.
+
+---
+
+## Directive Resolution
+
+### 1. Custom Directives
+
+```typescript
+// Detect custom directives in template
+// Pattern: [customDirective] or (customEvent) not from framework
+
+// From component imports:
+import { HighlightDirective } from '../directives/highlight.directive';
+
+// In story - import using component's exact path:
+import { HighlightDirective } from '../directives/highlight.directive';
+
+// Placement strategy (same as pipes/components):
+// Angular 19 default: standalone = true (unless explicitly false)
+
+decorators: [
+  moduleMetadata({
+    imports: [
+      CommonModule,
+      StandaloneDirectiveA,    // standalone: true or no declaration
+      StandaloneDirectiveB,    // Angular 19 default
+    ],
+    declarations: [
+      ComponentUnderTest,      // The component being tested
+      LegacyDirectiveC,        // standalone: false (explicitly declared)
+      LegacyDirectiveD,        // standalone: false
+    ]
+  })
+]
+```
+
+**Note**: Directive standalone detection uses same logic as pipes and components - only `standalone: false` explicit declaration makes it non-standalone.
+
+---
+
+## Module Metadata Generation
+
+### 1. Standalone Component (Angular 19 default)
+
+```typescript
+// Component is standalone: true or no explicit declaration
+const meta: Meta<ComponentName> = {
+  component: ComponentName,
+  // No decorators needed if component imports everything
+};
+
+// Only add decorators if story needs extra modules
+decorators: [
+  moduleMetadata({
+    imports: [
+      FormsModule,  // For custom template with ngModel
+    ]
+  })
+]
+```
+
+### 2. Non-Standalone Component
+
+```typescript
+// Component explicitly declares standalone: false
+const meta: Meta<ComponentName> = {
+  component: ComponentName,
+  decorators: [
+    moduleMetadata({
+      imports: [
+        CommonModule,
+        FormsModule,
+        StandaloneDependency,
+      ],
+      declarations: [
+        ComponentName,         // The component being tested
+        NonStandalonePipe,
+      ]
+    })
+  ]
+};
+```
+
+---
+
+## Output Structure
+
+```typescript
+interface DependencyResolution {
+  // Framework modules
+  modules: {
+    CommonModule: boolean;
+    FormsModule: boolean;
+    ReactiveFormsModule: boolean;
+    ClarityModule: boolean;
+  };
+  
+  // Import statements to generate
+  imports: {
+    statement: string;        // Full import line
+    symbols: string[];        // ['Pipe', 'Component']
+    path: string;            // '../path/to/file'
+    category: 'module' | 'pipe' | 'component' | 'directive';
+  }[];
+  
+  // Module metadata configuration
+  moduleMetadata: {
+    imports: string[];       // Standalone items + modules
+    declarations: string[];  // Non-standalone items
+    providers: any[];        // Services (if needed)
+  };
+  
+  // Failed imports (for TODO generation)
+  failedImports: {
+    expectedSymbol: string;
+    expectedPath: string;
+    reason: string;
+  }[];
+}
+```
+
+---
+
+## Integration
+
+### Inputs from:
+- `component-analysis.mdc` → Component metadata, template content, imports
+
+### Outputs to:
+- `story-template-generation.mdc` → Import statements, moduleMetadata config
+- `error-handling-and-validation.mdc` → Failed imports for TODO generation
+
+### Error Handling:
+- Import path not found → Add to `failedImports`, generate TODO
+- Ambiguous standalone status → Assume standalone (Angular 19 default)
+- Module detection uncertain → Include module (safer to have extra than missing)
+
+---
+
+## Best Practices
+
+1. **Use Component's Paths**: Copy exact import paths from component file
+2. **Framework First**: Import framework modules before custom items
+3. **Standalone Default**: Assume standalone: true unless explicitly false
+4. **No Mocking**: Never generate mock components/pipes - use TODO instead
+5. **Path Aliases**: Preserve path aliases from component (@app/, @shared/, etc.)
+6. **Minimal Imports**: Only import what's actually used in template
+
+---
+
+## Example Output
+
+```typescript
+// Input: 
+// - UserListComponent (standalone: false - explicitly declared)
+// - Template uses: *ngFor
+// - Template uses: | sortBy pipe (standalone: true)
+// - Template uses: <app-avatar> component (standalone: true)
+
+// Output:
+import { CommonModule } from '@angular/common';
+import { SortByPipe } from '../pipes/sort-by.pipe';
+import { AvatarComponent } from '../avatar/avatar.component';
+
+const meta: Meta<UserListComponent> = {
+  component: UserListComponent,
+  decorators: [
+    moduleMetadata({
+      imports: [
+        CommonModule,      // Framework module
+        SortByPipe,        // Custom pipe (standalone: true)
+        AvatarComponent,   // Child component (standalone: true)
+      ],
+      declarations: [
+        UserListComponent, // Component under test (standalone: false)
+      ]
+    })
+  ]
+};
+
+// If UserListComponent were standalone (Angular 19 default):
+// - No moduleMetadata needed if component imports everything
+// - Only add moduleMetadata if story needs extra modules
+```
+
+---
+
+**Note**: This rule focuses solely on dependency resolution. Type safety for mocks is handled by `type-safe-mocks.mdc`.

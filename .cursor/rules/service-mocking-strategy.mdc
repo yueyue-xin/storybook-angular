@@ -1,0 +1,476 @@
+---
+description: "Service mocking strategy for global vs local providers"
+globs: ["**/*.stories.ts"]
+alwaysApply: false
+---
+
+# Service Mocking Strategy Rules
+
+## Purpose
+Determine optimal service mocking strategy based on global providers configuration. Distinguishes between globally provided services (use parameters) and local services (create mocks).
+
+## Trigger
+- After `component-analysis.mdc` identifies injected services
+- When component has constructor dependencies
+- Before generating story decorators
+
+---
+
+## Core Strategy
+
+### Priority Hierarchy
+1. **Global services** → Use `parameters` configuration (TranslocoService, Store)
+2. **Local services** → Create minimal type-safe mocks
+3. **Unknown services** → Add TODO for developer
+
+**Never mock globally provided services** - use parameters instead.
+
+---
+
+## Global Services Detection
+
+### 1. Check Global Providers
+
+```typescript
+// Check @storybook-config/preview.ts for global providers
+const GLOBAL_SERVICES = [
+  'TranslocoService',  // i18n service
+  'Store',             // @ngxs/store state management
+];
+
+function isGlobalService(serviceName: string): boolean {
+  return GLOBAL_SERVICES.some(global => 
+    serviceName.includes(global)
+  );
+}
+```
+
+### 2. TranslocoService Strategy
+
+```typescript
+// Method 1: Constructor injection (traditional)
+constructor(private transloco: TranslocoService) {}
+
+// Method 2: inject() function (modern Angular)
+import { inject } from '@angular/core';
+
+export class MyComponent {
+  private transloco = inject(TranslocoService);
+  // or
+  transloco = inject(TranslocoService);
+}
+
+// Both methods detected the same way in component analysis
+// Check constructor OR check for inject(ServiceName) pattern
+```
+
+```typescript
+// ✅ Use parameters.translations (NOT local mock)
+const meta: Meta<Component> = {
+  parameters: {
+    translations: {
+      'sdk.label.title': 'Title',
+      'sdk.label.description': 'Description',
+      // Keys extracted by transloco-integration.mdc
+    }
+  }
+};
+
+// ❌ Don't create local mock
+// decorators: [
+//   moduleMetadata({
+//     providers: [
+//       { provide: TranslocoService, useClass: MockTranslocoService }  // Wrong!
+//     ]
+//   })
+// ]
+```
+
+**Rationale**: MockTranslocoService is globally configured in preview.ts
+
+**Detection**: Scan for both `constructor(... ServiceName ...)` and `inject(ServiceName)` patterns
+
+### 3. Store (@ngxs/store) Strategy
+
+```typescript
+// Component injects Store
+constructor(private store: Store) {}
+
+// ✅ Use parameters.storeSelectors and storeReducers
+const meta: Meta<Component> = {
+  parameters: {
+    storeSelectors: [
+      {
+        selector: UserSelectors.currentUser,
+        initialValue: null as User | null,
+      }
+    ],
+    storeReducers: [
+      {
+        actionType: ToggleAction,
+        selector: UserSelectors.someFlag,
+        handler: (current: boolean) => !current,
+      }
+    ]
+  }
+};
+
+// ❌ Don't create local Store mock
+```
+
+**Rationale**: Store is globally configured in preview.ts
+
+---
+
+## Local Service Mocking
+
+### 1. When to Create Local Mocks
+
+```typescript
+// Component injects service NOT in global providers
+constructor(
+  private dataService: DataService,
+  private apiClient: ApiClient
+) {}
+
+// ✅ Create local mocks for these
+```
+
+### 2. Minimal Mock Strategy
+
+```typescript
+// Import real service types from component
+import { DataService, DataItem } from './data.service';
+import { Observable, of } from 'rxjs';
+
+// Create abstract class as injection token (if service not accessible)
+abstract class DataService {
+  abstract getData(): Observable<DataItem[]>;
+  abstract saveData(data: DataItem): Observable<void>;
+}
+
+// Create minimal type-safe implementation
+class MockDataService implements DataService {
+  getData(): Observable<DataItem[]> {
+    return of([
+      { id: 1, name: 'Item 1' },
+      { id: 2, name: 'Item 2' }
+    ]);
+  }
+  
+  saveData(data: DataItem): Observable<void> {
+    console.log('Mock save:', data);
+    return of(undefined);
+  }
+}
+
+// Provide in story
+decorators: [
+  moduleMetadata({
+    providers: [
+      { provide: DataService, useClass: MockDataService }
+    ]
+  })
+]
+```
+
+**Key Principle**: Never use `any` - always import and use real types from component imports.
+
+---
+
+## Service Classification
+
+```typescript
+interface ServiceClassification {
+  // Services already provided globally
+  globalServices: {
+    name: string;
+    strategy: 'parameters.translations' | 'parameters.store';
+  }[];
+  
+  // Services needing local mocks
+  localServices: {
+    name: string;
+    methods: {
+      name: string;
+      returnType: string;
+    }[];
+  }[];
+  
+  // Services that couldn't be resolved
+  unknownServices: {
+    name: string;
+    token?: string;  // If using @Inject(TOKEN)
+  }[];
+}
+```
+
+---
+
+## Parameters Configuration
+
+### 1. Transloco Parameters
+
+```typescript
+// Generated by transloco-integration.mdc
+// This rule only flags that parameters should be used
+
+parameters: {
+  translations: {
+    // Translation keys go here
+    // Populated by transloco-integration.mdc
+  }
+}
+```
+
+### 2. Store Parameters
+
+```typescript
+// Analyze component Store usage
+// Example: this.store.select(UserSelectors.isLoading)
+
+parameters: {
+  storeSelectors: [
+    {
+      selector: UserSelectors.isLoading,
+      initialValue: false,
+    },
+    {
+      selector: UserSelectors.currentUser,
+      initialValue: null as User | null,
+    }
+  ]
+}
+
+// Example: this.store.dispatch(new ToggleAction())
+
+parameters: {
+  storeReducers: [
+    {
+      actionType: ToggleAction,
+      selector: UserSelectors.showError,
+      handler: (current: boolean) => !current,
+    }
+  ]
+}
+```
+
+---
+
+## Mock Service Templates
+
+### 1. HTTP Service Mock
+
+```typescript
+abstract class HttpService {
+  abstract get<T>(url: string): Observable<T>;
+  abstract post<T>(url: string, body: any): Observable<T>;
+}
+
+class MockHttpService implements HttpService {
+  get<T>(url: string): Observable<T> {
+    console.log('Mock GET:', url);
+    return of({} as T);
+  }
+  
+  post<T>(url: string, body: any): Observable<T> {
+    console.log('Mock POST:', url, body);
+    return of({} as T);
+  }
+}
+```
+
+### 2. Configuration Service Mock
+
+```typescript
+abstract class ConfigService {
+  abstract getConfig(): Config;
+  abstract updateConfig(config: Partial<Config>): void;
+}
+
+class MockConfigService implements ConfigService {
+  private config: Config = {
+    apiUrl: 'http://mock-api.com',
+    timeout: 5000,
+  };
+  
+  getConfig(): Config {
+    return this.config;
+  }
+  
+  updateConfig(config: Partial<Config>): void {
+    this.config = { ...this.config, ...config };
+  }
+}
+```
+
+### 3. Simple Data Service Mock
+
+```typescript
+abstract class UserService {
+  abstract getUsers(): Observable<User[]>;
+}
+
+class MockUserService implements UserService {
+  getUsers(): Observable<User[]> {
+    return of([
+      { id: 1, name: 'User 1', email: 'user1@test.com' },
+      { id: 2, name: 'User 2', email: 'user2@test.com' }
+    ]);
+  }
+}
+```
+
+---
+
+## Token-Based Injection
+
+### 1. InjectionToken Handling
+
+**Scenario**: Component injects configuration or constants using Angular InjectionToken instead of a service class.
+
+```typescript
+// In app code - tokens.ts
+import { InjectionToken } from '@angular/core';
+
+export interface ApiConfig {
+  baseUrl: string;
+  timeout: number;
+  retryAttempts?: number;
+}
+
+export const API_CONFIG = new InjectionToken<ApiConfig>('API_CONFIG');
+```
+
+```typescript
+// Component uses InjectionToken to inject config
+import { Component, Inject } from '@angular/core';
+import { API_CONFIG, ApiConfig } from './tokens';
+
+@Component({
+  selector: 'app-data-fetcher',
+  template: '...'
+})
+export class DataFetcherComponent {
+  constructor(
+    @Inject(API_CONFIG) private config: ApiConfig  // Inject using token
+  ) {
+    console.log('API URL:', this.config.baseUrl);
+  }
+}
+```
+
+```typescript
+// In story - provide mock value for the token
+import { API_CONFIG, ApiConfig } from './tokens';
+
+const mockApiConfig: ApiConfig = {
+  baseUrl: 'http://mock-api.com',
+  timeout: 5000,
+  retryAttempts: 3
+};
+
+decorators: [
+  moduleMetadata({
+    providers: [
+      {
+        provide: API_CONFIG,        // Use the token
+        useValue: mockApiConfig     // Provide mock config
+      }
+    ]
+  })
+]
+```
+
+**Why This Matters**: 
+- InjectionToken is commonly used for configuration objects, feature flags, or constants
+- Unlike services (which use class as token), InjectionToken requires explicit token reference
+- Must provide the token in story's providers, or component will throw `NullInjectorError`
+
+---
+
+## Output Structure
+
+```typescript
+interface ServiceMockConfig {
+  // Global services - use parameters
+  useTranslocoParameters: boolean;
+  useStoreParameters: boolean;
+  
+  // Local mocks to generate
+  localMocks: {
+    serviceName: string;
+    abstractClass: string;    // Abstract class definition
+    mockClass: string;        // Mock implementation
+    provider: string;         // Provider configuration
+  }[];
+  
+  // Token-based injections
+  tokenProviders: {
+    token: string;
+    value: string;
+  }[];
+  
+  // Unresolved services
+  unknownServices: {
+    name: string;
+    todoMessage: string;
+  }[];
+}
+```
+
+---
+
+## Integration
+
+### Inputs from:
+- `component-analysis.mdc` → Injected services list
+
+### Outputs to:
+- `story-template-generation.mdc` → Service mock code, provider config
+- `transloco-integration.mdc` → Flag to generate translations
+- `error-handling-and-validation.mdc` → Unknown services for TODO
+
+### Error Handling:
+- Service type unknown → Create minimal mock with TODO
+- Service methods unclear → Provide empty implementation with TODO
+- Circular dependency → Flag for developer attention
+
+---
+
+## Best Practices
+
+1. **Check Global First**: Always check if service is globally provided
+2. **Minimal Mocks**: Only implement methods actually used by component
+3. **Type Safety**: Use proper types, never `any`
+4. **Observable Returns**: Return `of()` for immediate values
+5. **Console Logging**: Add console.log in mocks for debugging
+6. **Abstract Classes**: Use as injection tokens for better type safety
+
+---
+
+## Decision Tree
+
+```
+Service detected in component
+  ↓
+Is it TranslocoService?
+  ✅ Yes → Use parameters.translations
+  ❌ No → Continue
+  ↓
+Is it Store (@ngxs/store)?
+  ✅ Yes → Use parameters.storeSelectors/storeReducers
+  ❌ No → Continue
+  ↓
+Is it in global providers?
+  ✅ Yes → Use existing global mock
+  ❌ No → Continue
+  ↓
+Can we analyze service interface?
+  ✅ Yes → Create minimal type-safe mock
+  ❌ No → Add TODO for developer
+```
+
+---
+
+**Note**: This rule determines mocking strategy only. Actual mock implementations are generated by `story-template-generation.mdc`.

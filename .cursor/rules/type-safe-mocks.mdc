@@ -1,0 +1,469 @@
+---
+description: "Type-safe mock data generation using real component types"
+globs: ["**/*.stories.ts"]
+alwaysApply: false
+---
+
+# Type-Safe Mocks Rules
+
+## Purpose
+Generate type-safe mock data for component @Input() properties using real types from component imports. Ensures mocks match component interfaces exactly.
+
+## Trigger
+- After `component-analysis.mdc` provides input properties and type mappings
+- When generating story args
+- Before story template generation
+
+---
+
+## Core Principles
+
+1. **Real Types Only**: Import actual types from component's import paths
+2. **Never Use `any`**: Use `unknown` with type guards if type unclear
+3. **Complete Mocks**: Include all required properties from interfaces
+4. **Preserve Import Paths**: Use component's exact import statements
+
+---
+
+## Type Extraction
+
+### 1. From Component Imports
+
+```typescript
+// Component file:
+import { User } from '@models/user';
+import { GridConfig } from './grid-config.model';
+import { Column } from '@app/shared/types';
+
+export class DataGridComponent {
+  @Input() user!: User;
+  @Input() config!: GridConfig;
+  @Input() columns: Column[] = [];
+}
+
+// Story file - use EXACT same paths:
+import { User } from '@models/user';
+import { GridConfig } from './grid-config.model';
+import { Column } from '@app/shared/types';
+```
+
+**Strategy**: Copy import paths exactly from component, don't modify.
+
+### 2. Type Mapping
+
+```typescript
+// Build from component-analysis output
+interface TypeImportMap {
+  'User': '@models/user',
+  'GridConfig': './grid-config.model',
+  'Column': '@app/shared/types'
+}
+
+// Generate imports for story
+const imports = [
+  "import { User } from '@models/user';",
+  "import { GridConfig } from './grid-config.model';",
+  "import { Column } from '@app/shared/types';"
+];
+```
+
+---
+
+## Mock Data Generation
+
+### 1. Simple Types
+
+```typescript
+// Primitive types
+@Input() title: string = '';
+@Input() count: number = 0;
+@Input() enabled: boolean = false;
+
+// Mock data
+const mockTitle: string = 'Test Title';
+const mockCount: number = 42;
+const mockEnabled: boolean = true;
+```
+
+### 2. Object Types
+
+```typescript
+// Interface type
+@Input() config!: GridConfig;
+
+// From import: import { GridConfig } from './grid-config.model';
+// Interface definition:
+interface GridConfig {
+  pageSize: number;
+  sortable: boolean;
+  filterable?: boolean;  // Optional
+}
+
+// Mock data - include ALL required properties
+const mockConfig: GridConfig = {
+  pageSize: 10,
+  sortable: true,
+  // Optional properties can be omitted
+};
+```
+
+### 3. Array Types
+
+```typescript
+// Array of objects
+@Input() users: User[] = [];
+
+// Mock data
+const mockUsers: User[] = [
+  { id: 1, name: 'John Doe', email: 'john@example.com' },
+  { id: 2, name: 'Jane Smith', email: 'jane@example.com' }
+];
+
+// Empty array variant (for edge case story)
+const mockEmptyUsers: User[] = [];
+```
+
+### 4. Union Types
+
+```typescript
+// Union type
+@Input() status: 'pending' | 'active' | 'completed' = 'pending';
+
+// Mock data
+const mockStatus: 'pending' | 'active' | 'completed' = 'active';
+```
+
+### 5. Generic Types
+
+```typescript
+// Generic type
+@Input() data!: Array<DataItem>;
+
+// Mock data
+const mockData: Array<DataItem> = [
+  { id: '1', value: 'Item 1' },
+  { id: '2', value: 'Item 2' }
+];
+```
+
+---
+
+## Complex Mock Patterns
+
+### 1. Nested Objects
+
+```typescript
+// Interface with nested objects
+interface UserProfile {
+  user: {
+    id: number;
+    name: string;
+  };
+  settings: {
+    theme: 'light' | 'dark';
+    notifications: boolean;
+  };
+}
+
+// Mock data - complete structure
+const mockProfile: UserProfile = {
+  user: {
+    id: 1,
+    name: 'Test User'
+  },
+  settings: {
+    theme: 'light',
+    notifications: true
+  }
+};
+```
+
+### 2. Mixed Array Types
+
+```typescript
+// Array with mixed item types
+@Input() items: (string | number | { label: string })[] = [];
+
+// Mock data
+const mockItems: (string | number | { label: string })[] = [
+  'Text item',
+  42,
+  { label: 'Object item' }
+];
+```
+
+### 3. Readonly Types
+
+```typescript
+// Readonly array
+@Input() readonly items: ReadonlyArray<Item> = [];
+
+// Mock data
+const mockItems: ReadonlyArray<Item> = [
+  { id: 1, name: 'Item 1' }
+] as const;
+```
+
+---
+
+## Type Resolution Strategies
+
+### 1. Type Available
+
+```typescript
+// Type found in component imports
+import { User } from '@models/user';
+
+// ✅ Direct usage
+const mockUser: User = {
+  id: 1,
+  name: 'Test User',
+  email: 'test@example.com'
+};
+```
+
+### 2. Type Unavailable
+
+```typescript
+// Import failed or type not found
+
+// ❌ Never use 'any'
+// const mockData: any = {};
+
+// ✅ Use 'unknown' with TODO
+// TODO: Import content failed
+// Expected: import { UserData } from '@models/user'
+// Developer action required: Fix import path
+
+const mockData: unknown = {
+  id: 1,
+  name: 'Test User'
+};
+
+// In story args, use type assertion
+args: {
+  data: mockData as UserData  // TODO: Fix type after import resolved
+}
+```
+
+### 3. Inferred Types
+
+```typescript
+// Type inferred from default value
+@Input() items = ['a', 'b', 'c'];  // Inferred: string[]
+
+// Mock data
+const mockItems: string[] = ['Item 1', 'Item 2', 'Item 3'];
+```
+
+---
+
+## Mock Data Naming
+
+```typescript
+// Pattern: mock + PascalCase property name
+@Input() userProfile!: UserProfile;
+const mockUserProfile: UserProfile = { ... };
+
+@Input() serviceConfig!: ServiceConfig;
+const mockServiceConfig: ServiceConfig = { ... };
+
+@Input() items: Item[] = [];
+const mockItems: Item[] = [ ... ];
+```
+
+**Convention**: Clear, descriptive names that indicate purpose.
+
+---
+
+## Story Args Assignment
+
+### 1. Direct Assignment
+
+```typescript
+// With proper typing, no assertions needed
+export const Default: Story = {
+  args: {
+    userProfile: mockUserProfile,    // Type matches
+    serviceConfig: mockServiceConfig, // Type matches
+    items: mockItems                  // Type matches
+  }
+};
+```
+
+### 2. Type Assertions (Only When Necessary)
+
+```typescript
+// Only when type couldn't be imported
+export const Default: Story = {
+  args: {
+    // TODO: Remove assertion after fixing import
+    data: mockData as UserData
+  }
+};
+```
+
+---
+
+## Mock Variations for Stories
+
+### 1. Default Mock
+
+```typescript
+// Standard/happy path data
+const mockUser: User = {
+  id: 1,
+  name: 'John Doe',
+  email: 'john@example.com',
+  status: 'active'
+};
+```
+
+### 2. Empty State Mock
+
+```typescript
+// Empty collections
+const mockEmptyItems: Item[] = [];
+
+// Null/undefined values
+const mockNoUser: User | null = null;
+```
+
+### 3. Edge Case Mocks
+
+```typescript
+// Long text
+const mockLongName: string = 'Very Long Name That Might Cause Layout Issues';
+
+// Large numbers
+const mockLargeCount: number = 999999;
+
+// Special characters
+const mockSpecialText: string = 'Text with <html> & "quotes"';
+```
+
+### 4. Error State Mocks
+
+```typescript
+// Invalid data (for error story)
+const mockInvalidEmail: string = 'not-an-email';
+
+// Missing required field (will show validation)
+const mockIncompleteData: Partial<User> = {
+  id: 1
+  // name missing
+};
+```
+
+---
+
+## Output Structure
+
+```typescript
+interface TypeSafeMock {
+  // Import statements to generate
+  imports: {
+    statement: string;  // Full import line
+    types: string[];    // Type names
+    path: string;       // Import path
+  }[];
+  
+  // Mock data declarations
+  mocks: {
+    name: string;           // mockUserProfile
+    type: string;           // UserProfile
+    value: string;          // JSON representation
+    forProperty: string;    // Original @Input name
+  }[];
+  
+  // Args configuration
+  args: {
+    [propertyName: string]: string;  // Reference to mock variable
+  };
+  
+  // Failed type resolutions
+  unresolvedTypes: {
+    propertyName: string;
+    expectedType: string;
+    todoMessage: string;
+  }[];
+}
+```
+
+---
+
+## Integration
+
+### Inputs from:
+- `component-analysis.mdc` → Input properties, type mappings
+- `dependency-resolution.mdc` → Import statements
+
+### Outputs to:
+- `story-template-generation.mdc` → Mock data declarations, args config
+- `story-variants-generation.mdc` → Variations of mock data
+- `error-handling-and-validation.mdc` → Unresolved types for TODO
+
+### Error Handling:
+- Type import failed → Use `unknown`, add TODO
+- Type definition unclear → Create minimal mock with TODO
+- Circular type reference → Simplify to break cycle
+
+---
+
+## Best Practices
+
+1. **Import Exactly**: Use component's exact import paths
+2. **Complete Mocks**: Include all required interface properties
+3. **Meaningful Data**: Use realistic values, not just placeholders
+4. **Naming Convention**: `mock` + PascalCase property name
+5. **Type Annotations**: Always explicitly type mock variables
+6. **No Type Assertions**: Only when type truly unavailable
+7. **Multiple Variants**: Create variations for different stories
+
+---
+
+## Example Output
+
+```typescript
+// Component:
+// @Input() user!: User;
+// @Input() config!: GridConfig;
+// @Input() items: Item[] = [];
+
+// Generated story imports:
+import type { Meta, StoryObj } from '@storybook/angular';
+import { ComponentName } from './component-name.component';
+import { User } from '@models/user';
+import { GridConfig } from './grid-config.model';
+import { Item } from '@app/shared/types';
+
+// Generated mock data:
+const mockUser: User = {
+  id: 1,
+  name: 'Test User',
+  email: 'test@example.com'
+};
+
+const mockConfig: GridConfig = {
+  pageSize: 10,
+  sortable: true
+};
+
+const mockItems: Item[] = [
+  { id: 1, label: 'Item 1' },
+  { id: 2, label: 'Item 2' }
+];
+
+// Generated args:
+export const Default: Story = {
+  args: {
+    user: mockUser,
+    config: mockConfig,
+    items: mockItems
+  }
+};
+```
+
+---
+
+**Note**: This rule ensures type safety for all mock data. Component-level type issues are developer responsibility, not handled here.

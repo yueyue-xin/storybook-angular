@@ -1,0 +1,377 @@
+---
+description: "Error handling and validation for story file generation"
+globs: ["**/*.stories.ts"]
+alwaysApply: true
+---
+
+# Error Handling and Validation Rules
+
+## Purpose
+Handle errors during story generation process and ensure generated story files are functional. Component-level issues are developer responsibility.
+
+## Core Principles
+
+1. **Story Generation Focus**: Only handle story file generation errors
+2. **Component Issues**: Not our responsibility - developer must fix component
+3. **Progressive Enhancement**: Generate basic story first, improve with TODOs
+4. **Clear Feedback**: Actionable error messages for story-specific issues
+5. **Fault Isolation**: Single story error doesn't affect other stories
+
+---
+
+## Error Handling Strategies
+
+### 1. Import Failures in Story File
+
+#### 1.1 Real Import Failed
+```typescript
+// Attempted: import { CustomPipe } from '../pipes/custom.pipe'
+// File doesn't exist or path incorrect
+
+// TODO: Import content failed
+// Expected: import { CustomPipe } from '../pipes/custom.pipe'
+// 
+// Please verify:
+// 1. File exists at specified path
+// 2. Export name is correct
+// 3. Path is relative to story file location
+//
+// Developer action required: Fix import path or create missing file
+```
+
+**Strategy**: Add TODO comment, let developer handle. Don't generate mock.
+
+#### 1.2 Type Import Failed
+```typescript
+// Attempted: import { User } from '@models/user'
+// Path alias not resolved
+
+// TODO: Import content failed
+// Expected: import { User } from '@models/user'
+// 
+// Possible causes:
+// 1. Path alias '@models' not configured in tsconfig.json
+// 2. File doesn't exist
+// 3. Type not exported
+//
+// Developer action required: Verify path alias configuration
+```
+
+**Strategy**: Add TODO, continue with `unknown` type for story args.
+
+---
+
+### 2. Story Module Configuration Errors
+
+#### 2.1 Module Import Conflicts
+```typescript
+// Error: Standalone component in declarations array
+
+// Correct placement:
+decorators: [
+  moduleMetadata({
+    imports: [
+      CommonModule,          // Module
+      StandaloneComponent,   // standalone: true
+    ],
+    declarations: [
+      NonStandaloneComponent // standalone: false
+    ]
+  })
+]
+
+// Rule: Check component metadata before placing in decorators
+```
+
+#### 2.2 Missing Module Dependencies
+```typescript
+// Template uses FormsModule features but not imported
+
+// Add required module:
+decorators: [
+  moduleMetadata({
+    imports: [
+      FormsModule  // Required for [(ngModel)]
+    ]
+  })
+]
+
+// TODO: Verify component template dependencies
+```
+
+---
+
+### 3. Interactive Test Errors
+
+#### 3.1 Element Selection Failed
+```typescript
+// querySelector returns null in play function
+
+play: async ({ canvasElement }) => {
+  // Priority 1: data-test-id
+  let element = canvasElement.querySelector('[data-test-id="target"]');
+  
+  if (!element) {
+    // Priority 2: role-based
+    try {
+      element = within(canvasElement).getByRole('button', { name: /submit/i });
+    } catch {
+      // Priority 3: generic selector
+      element = canvasElement.querySelector('button[type="submit"]');
+    }
+  }
+  
+  if (!element) {
+    console.warn('⚠️ Element not found - verify component renders correctly');
+    return; // Exit gracefully, don't fail entire story
+  }
+  
+  await userEvent.click(element);
+}
+```
+
+**Strategy**: Multi-level selector fallback, graceful degradation.
+
+#### 3.2 Async Operation Timeout
+```typescript
+// Element takes too long to appear
+
+play: async ({ canvasElement }) => {
+  try {
+    await waitFor(
+      async () => {
+        const element = canvasElement.querySelector('[data-test-id="content"]');
+        await expect(element).toBeInTheDocument();
+      },
+      { timeout: 5000 }
+    );
+  } catch (error) {
+    console.warn('⚠️ Async content timeout - component may have issues');
+    // Don't rethrow - log and continue
+  }
+}
+```
+
+**Strategy**: Timeout with warning, don't crash story.
+
+#### 3.3 UserEvent Interaction Failed
+```typescript
+// Element not interactable
+
+play: async ({ canvasElement }) => {
+  const input = canvasElement.querySelector('[data-test-id="input"]');
+  
+  // Type guard
+  if (!(input instanceof HTMLInputElement)) {
+    console.warn('⚠️ Element is not an input');
+    return;
+  }
+  
+  // State check
+  if (input.disabled || input.readOnly) {
+    console.warn('⚠️ Input not editable - skipping interaction');
+    return;
+  }
+  
+  // Safe execution
+  try {
+    await userEvent.type(input, 'test@example.com');
+  } catch (error) {
+    console.error('❌ Interaction failed:', error);
+  }
+}
+```
+
+**Strategy**: Type guards + state checks, graceful exit on failure.
+
+---
+
+### 4. Store Configuration Errors
+
+#### 4.1 Store Selector Configuration
+```typescript
+// Store selector type mismatch
+
+parameters: {
+  storeSelectors: [{
+    selector: UserSelectors.currentUser,
+    // TODO: Verify initialValue type matches selector return type
+    initialValue: null as User | null,
+  }]
+}
+
+// Validation in play function:
+play: async ({ canvasElement }) => {
+  const element = canvasElement.querySelector('[data-test-id="user-name"]');
+  if (!element) {
+    console.warn('⚠️ Store-dependent element not found');
+    return;
+  }
+  await expect(element).toBeInTheDocument();
+}
+```
+
+**Strategy**: Type assertion + validation, log warnings on mismatch.
+
+---
+
+### 5. Transloco Integration Errors
+
+#### 5.1 Dynamic Translation Keys
+```typescript
+// Template: {{ t(dynamicKey) }}
+// Cannot extract keys statically
+
+parameters: {
+  translations: {
+    // TODO: Add dynamic translation keys manually
+    // Template uses dynamic keys - static extraction not possible
+    
+    // Common fallbacks:
+    'common.loading': 'Loading...',
+    'common.error': 'Error',
+    'common.save': 'Save',
+  }
+}
+```
+
+**Strategy**: Provide common defaults, add TODO for developer.
+
+#### 5.2 Language Suffix in Assertions
+```typescript
+// MockTranslocoService adds [EN], [FR], [ES] suffixes
+
+play: async ({ canvasElement }) => {
+  const button = canvasElement.querySelector('button');
+  
+  // ✅ Use regex for transloco content
+  await expect(button).toHaveTextContent(/^Submit/);
+  
+  // ❌ Don't use exact match
+  // await expect(button).toHaveTextContent('Submit');
+}
+```
+
+**Strategy**: Use flexible matchers for transloco content.
+
+---
+
+### 6. Build & Runtime Errors
+
+#### 6.1 TypeScript Compilation Error
+```typescript
+// Type error in generated story
+
+// @ts-expect-error - TODO: Fix type mismatch
+// Issue: [Describe specific type issue]
+// Expected: [Expected type]
+// Actual: [Actual type]
+const value = problematicExpression;
+```
+
+**Strategy**: Use `@ts-expect-error` with detailed explanation.
+
+#### 6.2 Runtime Provider Error
+```typescript
+// NullInjectorError: No provider for Service
+
+// Add minimal provider:
+decorators: [
+  moduleMetadata({
+    providers: [{
+      provide: SomeService,
+      useValue: {
+        // TODO: Add required methods based on component usage
+        getData: () => of([]),
+      }
+    }]
+  })
+]
+```
+
+**Strategy**: Minimal mock provider with TODO.
+
+---
+
+## Validation Checklist
+
+```typescript
+interface StoryValidation {
+  checks: {
+    hasValidImports: boolean;      // All imports resolve
+    hasPlayFunction: boolean;      // Has basic interaction test
+    hasErrorHandling: boolean;     // Play function handles failures
+    passesTypeCheck: boolean;      // No TS errors
+  };
+  warnings: string[];
+  todos: string[];
+}
+
+// Output example:
+// ✅ Passed (3/4):
+// - Valid imports, play function, type check
+// 
+// ⚠️ Warnings (1):
+// - Play function missing error handling
+// 
+// 📝 TODOs (1):
+// - Add dynamic translation keys manually
+```
+
+---
+
+## Best Practices
+
+1. **Never use `any`**: Use `unknown` + type guards
+2. **Graceful Degradation**: Warn and continue, don't crash
+3. **Type Guards**: Check types before DOM interactions
+4. **Multiple Selectors**: Fallback chain for element selection
+5. **Timeout Handling**: Set reasonable timeouts for async operations
+6. **Clear TODOs**: Specify what developer needs to do
+7. **Don't Mock Components**: If import fails, add TODO for developer
+
+---
+
+## TODO Template
+
+```typescript
+// TODO: [Brief issue description]
+// 
+// Expected: [What was expected]
+// Actual: [What happened]
+// 
+// Developer action required:
+// 1. [Step 1]
+// 2. [Step 2]
+```
+
+---
+
+## Error Severity
+
+- **INFO**: Informational, no action needed
+- **WARNING**: May affect functionality, has fallback
+- **ERROR**: Developer action required
+- **CRITICAL**: Cannot generate story, must fix
+
+---
+
+## Integration
+
+### Applies To
+- Story file generation errors
+- Story runtime errors
+- Play function failures
+- Module configuration issues
+
+### Does NOT Apply To
+- Component source code issues
+- Component type annotations
+- Component template problems
+- Component dependency issues
+
+**Developer Responsibility**: Fix component before generating stories
+
+---
+
+**Note**: This rule (`alwaysApply: true`) focuses exclusively on story generation errors. Component-level issues require developer intervention before story generation.

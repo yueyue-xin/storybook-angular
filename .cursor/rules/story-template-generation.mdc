@@ -1,0 +1,557 @@
+---
+description: "Generate complete story file structure and basic stories"
+globs: ["**/*.stories.ts"]
+alwaysApply: false
+---
+
+# Story Template Generation Rules
+
+## Purpose
+Generate complete Storybook story file structure including imports, Meta configuration, and basic Default story. Combines outputs from all analysis rules into functional story code.
+
+## Trigger
+- After all analysis rules complete (component-analysis, dependency-resolution, type-safe-mocks, etc.)
+- When creating new story file
+- User requests: "Create story for [component]"
+
+---
+
+## Story File Structure
+
+### Template Overview
+```typescript
+// 1. Imports
+import type { Meta, StoryObj } from '@storybook/angular';
+import { moduleMetadata } from '@storybook/angular';
+import { userEvent, within, expect } from '@storybook/test';
+import { action } from '@storybook/addon-actions';
+// + Component imports
+// + Dependency imports
+// + Type imports
+// + Mock data declarations
+
+// 2. Meta configuration
+const meta: Meta<ComponentName> = { ... };
+export default meta;
+
+// 3. Story type
+type Story = StoryObj<ComponentName>;
+
+// 4. Stories
+export const Default: Story = { ... };
+```
+
+---
+
+## Import Generation
+
+### 1. Storybook Imports (Always Include)
+
+```typescript
+import type { Meta, StoryObj } from '@storybook/angular';
+import { moduleMetadata } from '@storybook/angular';
+import { userEvent, within, expect } from '@storybook/test';
+import { action } from '@storybook/addon-actions';
+```
+
+### 2. Component Import
+
+```typescript
+// From component-analysis.mdc
+import { ComponentName } from './component-name.component';
+```
+
+### 3. Module Imports
+
+```typescript
+// From dependency-resolution.mdc
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { ClarityModule } from '@clr/angular';
+import { SdkI18nModule } from '@storybook-config/mock';
+```
+
+### 4. Type Imports
+
+```typescript
+// From type-safe-mocks.mdc
+import { User } from '@models/user';
+import { GridConfig } from './grid-config.model';
+import { Column } from '@app/shared/types';
+```
+
+### 5. Service Imports (If Local Mocks Needed)
+
+```typescript
+// From service-mocking-strategy.mdc (only if local mocks)
+import { Injectable } from '@angular/core';
+import { Observable, of } from 'rxjs';
+```
+
+---
+
+## Mock Data Declarations
+
+```typescript
+// From type-safe-mocks.mdc
+const mockUser: User = {
+  id: 1,
+  name: 'Test User',
+  email: 'test@example.com'
+};
+
+const mockConfig: GridConfig = {
+  pageSize: 10,
+  sortable: true
+};
+```
+
+---
+
+## Service Mock Declarations
+
+```typescript
+// From service-mocking-strategy.mdc (only if local services)
+abstract class DataService {
+  abstract getData(): Observable<any[]>;
+}
+
+class MockDataService implements DataService {
+  getData(): Observable<any[]> {
+    return of([mockData]);
+  }
+}
+```
+
+---
+
+## Meta Configuration
+
+### 1. Standalone Component (Angular 19 Default)
+
+```typescript
+const meta: Meta<ComponentName> = {
+  title: 'Components/ComponentName',
+  component: ComponentName,
+  parameters: {
+    layout: 'centered',
+    // From transloco-integration.mdc (if uses transloco)
+    translations: {
+      'sdk.label.title': 'Title'
+    },
+    // From service-mocking-strategy.mdc (if uses Store)
+    storeSelectors: [
+      { selector: UserSelectors.currentUser, initialValue: null }
+    ]
+  },
+  argTypes: {
+    // From component-analysis.mdc
+    userName: { control: 'text', description: 'User name' },
+    isActive: { control: 'boolean', description: 'Active status' },
+    // Output events
+    userClick: { action: 'userClick' }
+  }
+};
+
+export default meta;
+type Story = StoryObj<ComponentName>;
+```
+
+### 2. Non-Standalone Component
+
+```typescript
+const meta: Meta<ComponentName> = {
+  title: 'Components/ComponentName',
+  component: ComponentName,
+  decorators: [
+    moduleMetadata({
+      imports: [
+        CommonModule,
+        FormsModule,
+        StandaloneDependency,
+      ],
+      declarations: [
+        ComponentName,
+        NonStandalonePipe,
+      ],
+      providers: [
+        { provide: DataService, useClass: MockDataService }
+      ]
+    })
+  ],
+  parameters: { ... },
+  argTypes: { ... }
+};
+```
+
+---
+
+## ArgTypes Generation
+
+### 1. Input Properties
+
+```typescript
+// From component-analysis.mdc inputs
+argTypes: {
+  userName: {
+    control: { type: 'text' },
+    description: 'User name to display',
+    table: {
+      type: { summary: 'string' },
+      defaultValue: { summary: '' }
+    }
+  },
+  count: {
+    control: { type: 'number' },
+    description: 'Number of items'
+  },
+  isActive: {
+    control: { type: 'boolean' },
+    description: 'Active state'
+  },
+  status: {
+    control: { type: 'select' },
+    options: ['pending', 'active', 'completed'],
+    description: 'Current status'
+  },
+  config: {
+    control: { type: 'object' },
+    description: 'Configuration object'
+  }
+}
+```
+
+### 2. Output Events
+
+```typescript
+// From component-analysis.mdc outputs
+argTypes: {
+  userClick: {
+    action: 'userClick',
+    description: 'Emitted when user is clicked'
+  },
+  statusChange: {
+    action: 'statusChange',
+    description: 'Emitted when status changes'
+  }
+}
+```
+
+### 3. Control Type Mapping
+
+```typescript
+function getControlType(typeName: string): string {
+  const typeMap: { [key: string]: string } = {
+    'string': 'text',
+    'number': 'number',
+    'boolean': 'boolean',
+    'Date': 'date',
+    // Union types → select
+    "'pending' | 'active' | 'completed'": 'select',
+    // Objects and arrays → object
+    'object': 'object',
+    'array': 'object',
+  };
+  
+  return typeMap[typeName] || 'object';
+}
+```
+
+---
+
+## Parameters Configuration
+
+### 1. Layout
+
+```typescript
+parameters: {
+  layout: 'centered',  // or 'fullscreen', 'padded'
+}
+```
+
+### 2. Translations (If Transloco)
+
+```typescript
+// From transloco-integration.mdc
+parameters: {
+  translations: {
+    'sdk.label.title': 'Title',
+    'sdk.label.description': 'Description',
+    'sdk.action.save': 'Save'
+  }
+}
+```
+
+### 3. Store Configuration (If Using Store)
+
+```typescript
+// From service-mocking-strategy.mdc
+parameters: {
+  storeSelectors: [
+    {
+      selector: UserSelectors.currentUser,
+      initialValue: null as User | null
+    },
+    {
+      selector: AppSelectors.isLoading,
+      initialValue: false
+    }
+  ],
+  storeReducers: [
+    {
+      actionType: ToggleAction,
+      selector: AppSelectors.showError,
+      handler: (current: boolean) => !current
+    }
+  ]
+}
+```
+
+---
+
+## Default Story Generation
+
+### 1. Basic Default Story
+
+```typescript
+export const Default: Story = {
+  args: {
+    // From type-safe-mocks.mdc
+    userName: mockUser.name,
+    config: mockConfig,
+    items: mockItems,
+    // Event handlers
+    userClick: action('userClick'),
+    statusChange: action('statusChange')
+  }
+};
+```
+
+### 2. With Play Function
+
+```typescript
+export const Default: Story = {
+  args: {
+    userName: mockUser.name,
+    config: mockConfig,
+    userClick: action('userClick')
+  },
+  play: async ({ canvasElement }) => {
+    // Basic existence check
+    const component = canvasElement.querySelector('[data-test-id="component-root"]');
+    await expect(component).toBeInTheDocument();
+  }
+};
+```
+
+---
+
+## Custom Template Module Strategy
+
+### 1. When to Use Global Decorators
+
+```typescript
+// If MAJORITY (>50%) of stories need custom templates with same modules
+const meta: Meta<ComponentName> = {
+  decorators: [
+    moduleMetadata({
+      imports: [CommonModule, FormsModule, ComponentName]
+    })
+  ]
+};
+
+// Stories can use custom templates without repeating decorators
+export const WithForm: Story = {
+  render: (args) => ({
+    props: args,
+    template: `<component [(ngModel)]="value"></component>`
+  })
+};
+```
+
+### 2. When to Use Individual Decorators
+
+```typescript
+// If ONLY FEW stories need custom templates
+const meta: Meta<ComponentName> = {
+  // No global decorators
+};
+
+// Each story with custom template adds its own
+export const WithForm: Story = {
+  decorators: [
+    moduleMetadata({
+      imports: [FormsModule, ComponentName]
+    })
+  ],
+  render: (args) => ({
+    props: args,
+    template: `<component [(ngModel)]="value"></component>`
+  })
+};
+```
+
+---
+
+## File Naming and Location
+
+```typescript
+// Component: user-profile.component.ts
+// Story file: user-profile.stories.ts (same directory)
+
+// Path structure:
+// src/app/components/user-profile/
+//   ├── user-profile.component.ts
+//   ├── user-profile.component.html
+//   ├── user-profile.component.scss
+//   └── user-profile.stories.ts  ← Generated here
+```
+
+---
+
+## Complete Example Output
+
+```typescript
+import type { Meta, StoryObj } from '@storybook/angular';
+import { moduleMetadata } from '@storybook/angular';
+import { userEvent, within, expect } from '@storybook/test';
+import { action } from '@storybook/addon-actions';
+import { CommonModule } from '@angular/common';
+import { SdkI18nModule } from '@storybook/mock';
+import { UserProfileComponent } from './user-profile.component';
+import { User } from '@models/user';
+
+const mockUser: User = {
+  id: 1,
+  name: 'John Doe',
+  email: 'john@example.com'
+};
+
+const meta: Meta<UserProfileComponent> = {
+  title: 'Components/UserProfile',
+  component: UserProfileComponent,
+  decorators: [
+    moduleMetadata({
+      imports: [CommonModule, SdkI18nModule]
+    })
+  ],
+  parameters: {
+    layout: 'centered',
+    translations: {
+      'profile.email': 'Email',
+      'profile.edit': 'Edit'
+    }
+  },
+  argTypes: {
+    user: {
+      control: { type: 'object' },
+      description: 'User profile data'
+    },
+    editable: {
+      control: { type: 'boolean' },
+      description: 'Whether profile is editable'
+    },
+    edit: {
+      action: 'edit',
+      description: 'Emitted when edit button clicked'
+    }
+  }
+};
+
+export default meta;
+type Story = StoryObj<UserProfileComponent>;
+
+export const Default: Story = {
+  args: {
+    user: mockUser,
+    editable: false,
+    edit: action('edit')
+  },
+  play: async ({ canvasElement }) => {
+    const profile = canvasElement.querySelector('.user-profile');
+    await expect(profile).toBeInTheDocument();
+    
+    const name = canvasElement.querySelector('h3');
+    await expect(name).toHaveTextContent(mockUser.name);
+  }
+};
+```
+
+---
+
+## Output Structure
+
+```typescript
+interface StoryFileOutput {
+  // File metadata
+  fileName: string;
+  componentName: string;
+  
+  // Import sections
+  imports: {
+    storybook: string[];
+    angular: string[];
+    component: string;
+    types: string[];
+    modules: string[];
+  };
+  
+  // Mock declarations
+  mocks: {
+    data: string[];
+    services: string[];
+  };
+  
+  // Meta configuration
+  meta: {
+    title: string;
+    component: string;
+    decorators: string[];
+    parameters: string;
+    argTypes: string;
+  };
+  
+  // Stories
+  stories: {
+    name: string;
+    code: string;
+  }[];
+}
+```
+
+---
+
+## Integration
+
+### Inputs from:
+- `component-analysis.mdc` → Component metadata, inputs/outputs
+- `dependency-resolution.mdc` → Module imports, dependencies
+- `type-safe-mocks.mdc` → Mock data declarations
+- `service-mocking-strategy.mdc` → Service mocks, providers
+- `transloco-integration.mdc` → Translation parameters
+
+### Outputs to:
+- `interactive-stories.mdc` → Base story file for enhancement
+- `story-variants-generation.mdc` → Meta config for variants
+- File system → Generated .stories.ts file
+
+### Error Handling:
+- Import failed → Added as TODO by `error-handling-and-validation.mdc`
+- Type unknown → Use `unknown` with TODO
+- Module missing → Include with TODO
+
+---
+
+## Best Practices
+
+1. **Organize Imports**: Group by type (storybook, angular, component, types)
+2. **Consistent Naming**: Follow Storybook conventions
+3. **Complete ArgTypes**: Document all inputs and outputs
+4. **Meaningful Defaults**: Use realistic mock data
+5. **Minimal Meta**: Only add decorators when necessary (standalone components need less)
+6. **Clear Titles**: Use descriptive story titles matching folder structure
+7. **Action Handlers**: Always add actions for @Output events
+
+---
+
+**Note**: This rule generates the foundational story file. `interactive-stories.mdc` and `story-variants-generation.mdc` enhance it with additional stories.

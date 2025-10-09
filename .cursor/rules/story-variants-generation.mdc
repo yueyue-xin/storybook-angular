@@ -1,0 +1,463 @@
+---
+description: "Generate story variants for different states and edge cases"
+globs: ["**/*.stories.ts"]
+alwaysApply: false
+---
+
+# Story Variants Generation Rules
+
+## Purpose
+Generate meaningful story variants that showcase component in different states, with different data, and edge cases. Maximum 5 stories per component to avoid redundancy.
+
+## Trigger
+- After `story-template-generation.mdc` and `interactive-stories.mdc`
+- When component supports multiple states or data variations
+- To create comprehensive component documentation
+
+---
+
+## Story Generation Strategy
+
+### Maximum Stories Rule
+**Generate maximum 5 stories per component**, prioritized by importance:
+
+1. **Default** (Always) - Standard/happy path with typical data
+2. **Interactive** (If has interactions) - Demonstrate user interactions
+3. **State Variants** (If has states) - Loading, error, empty states
+4. **Data Variants** (If displays data) - Single item, multiple items
+5. **Disabled** (If applicable) - Show disabled state for visual reference
+
+---
+
+## Story Type Determination
+
+### 1. Analyze Component Characteristics
+
+```typescript
+// From component-analysis.mdc metadata
+interface ComponentCharacteristics {
+  hasInteractions: boolean;      // Buttons, forms, clickable elements
+  hasDataVariations: boolean;    // Lists, tables, data display
+  hasStateVariations: boolean;   // Loading, error, empty states
+  complexity: 'simple' | 'medium' | 'complex';
+}
+
+// Decision tree for story generation
+function determineStories(characteristics: ComponentCharacteristics): StoryType[] {
+  const stories: StoryType[] = ['Default'];  // Always include
+  
+  if (characteristics.hasInteractions) {
+    stories.push('Interactive');
+  }
+  
+  if (characteristics.hasStateVariations) {
+    stories.push('StateVariants');
+  }
+  
+  if (characteristics.hasDataVariations) {
+    stories.push('DataVariants');
+  }
+  
+  if (characteristics.complexity === 'complex') {
+    stories.push('EdgeCases');
+  }
+  
+  // Limit to 5 stories
+  return stories.slice(0, 5);
+}
+```
+
+---
+
+## Story Variants
+
+### 1. Default Story (Always Generated)
+
+```typescript
+export const Default: Story = {
+  args: {
+    // Standard mock data
+    user: mockUser,
+    config: mockConfig,
+    onClick: action('onClick')
+  },
+  play: async ({ canvasElement }) => {
+    // Basic existence check
+    const component = canvasElement.querySelector('[data-test-id="component"]');
+    await expect(component).toBeInTheDocument();
+  }
+};
+```
+
+**Purpose**: Happy path, standard use case
+
+---
+
+### 2. Interactive Story (If Component Has Interactions)
+
+```typescript
+// Generated when component has:
+// - Buttons
+// - Form inputs
+// - Clickable elements
+// - Event handlers
+
+export const Interactive: Story = {
+  args: {
+    user: mockUser,
+    editable: true,
+    onClick: action('onClick'),
+    onSubmit: action('onSubmit')
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    
+    // Test primary interaction
+    const button = canvas.getByRole('button', { name: /submit/i });
+    await userEvent.click(button);
+    
+    // Verify event fired
+    await expect(args.onSubmit).toHaveBeenCalled();
+  }
+};
+```
+
+**Purpose**: Demonstrate and test user interactions
+
+---
+
+### 3. State Variants (If Component Has State Management)
+
+#### 3.1 Loading State
+
+```typescript
+export const Loading: Story = {
+  args: {
+    isLoading: true,
+    data: []
+  },
+  play: async ({ canvasElement }) => {
+    const loader = canvasElement.querySelector('[data-test-id="loader"]');
+    await expect(loader).toBeInTheDocument();
+  }
+};
+```
+
+#### 3.2 Error State
+
+```typescript
+export const Error: Story = {
+  args: {
+    hasError: true,
+    errorMessage: 'Failed to load data',
+    data: []
+  },
+  play: async ({ canvasElement }) => {
+    const errorElement = canvasElement.querySelector('[data-test-id="error"]');
+    await expect(errorElement).toBeInTheDocument();
+    await expect(errorElement).toHaveTextContent(/failed/i);
+  }
+};
+```
+
+#### 3.3 Empty State
+
+```typescript
+export const Empty: Story = {
+  args: {
+    items: [],
+    users: [],
+    data: []
+  },
+  play: async ({ canvasElement }) => {
+    const emptyMessage = canvasElement.querySelector('[data-test-id="empty-state"]');
+    await expect(emptyMessage).toBeInTheDocument();
+  }
+};
+```
+
+#### 3.4 Success State
+
+```typescript
+export const Success: Story = {
+  args: {
+    showSuccess: true,
+    successMessage: 'Operation completed successfully'
+  },
+  play: async ({ canvasElement }) => {
+    const successElement = canvasElement.querySelector('[data-test-id="success"]');
+    await expect(successElement).toBeInTheDocument();
+  }
+};
+```
+
+**Purpose**: Show component in different operational states
+
+---
+
+### 4. Data Variants (If Component Displays Data)
+
+#### 4.1 With Multiple Items
+
+```typescript
+export const WithMultipleItems: Story = {
+  args: {
+    items: [
+      { id: 1, name: 'Item 1', status: 'active' },
+      { id: 2, name: 'Item 2', status: 'pending' },
+      { id: 3, name: 'Item 3', status: 'completed' }
+    ]
+  },
+  play: async ({ canvasElement }) => {
+    const items = canvasElement.querySelectorAll('.item');
+    expect(items.length).toBe(3);
+  }
+};
+```
+
+#### 4.2 With Single Item
+
+```typescript
+export const WithSingleItem: Story = {
+  args: {
+    items: [
+      { id: 1, name: 'Single Item', status: 'active' }
+    ]
+  }
+};
+```
+
+#### 4.3 With Large Dataset
+
+```typescript
+export const WithLargeDataset: Story = {
+  args: {
+    items: Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      name: `Item ${i + 1}`,
+      status: ['active', 'pending', 'completed'][i % 3]
+    }))
+  }
+};
+```
+
+**Purpose**: Test component with different data volumes
+
+---
+
+### 5. Common State Variants (If Applicable)
+
+#### 5.1 Disabled State
+
+```typescript
+// Only generate if component has disabled prop
+export const Disabled: Story = {
+  args: {
+    disabled: true
+  }
+};
+```
+
+**Purpose**: Show how component appears when disabled (visual documentation)
+
+---
+
+## Story Naming Conventions
+
+```typescript
+// State-based names
+export const Loading: Story = { ... };
+export const Error: Story = { ... };
+export const Empty: Story = { ... };
+
+// Data-based names
+export const WithMultipleItems: Story = { ... };
+export const WithSingleItem: Story = { ... };
+
+// Interaction-based names
+export const Interactive: Story = { ... };
+
+// Common variants
+export const Disabled: Story = { ... };
+```
+
+**Convention**: Descriptive, PascalCase, clearly indicates variant purpose
+
+---
+
+## Avoiding Redundancy
+
+### What NOT to Create
+
+```typescript
+// ❌ Don't create similar stories
+export const Default: Story = { args: { count: 5 } };
+export const WithCount: Story = { args: { count: 10 } };  // Redundant!
+export const CountVariant: Story = { args: { count: 15 } };  // Redundant!
+
+// ❌ Don't create trivial variations
+export const BlueTheme: Story = { args: { color: 'blue' } };
+export const RedTheme: Story = { args: { color: 'red' } };  // Use controls instead!
+
+// ❌ Don't repeat interactions
+export const ClickButton1: Story = { /* click test */ };
+export const ClickButton2: Story = { /* same click test */ };  // Redundant!
+```
+
+### What TO Create
+
+```typescript
+// ✅ Distinct functional states
+export const Default: Story = { args: { items: mockItems } };
+export const Empty: Story = { args: { items: [] } };  // Different behavior
+export const Loading: Story = { args: { isLoading: true } };  // Different state
+
+// ✅ Different interaction patterns
+export const FormSubmission: Story = { /* test submit */ };
+export const FormValidation: Story = { /* test validation */ };  // Different aspect
+```
+
+---
+
+## Story Selection Algorithm
+
+```typescript
+function selectStoriesToGenerate(
+  component: ComponentAnalysis
+): StoryConfig[] {
+  const stories: StoryConfig[] = [];
+  
+  // 1. Default (always)
+  stories.push({
+    name: 'Default',
+    type: 'standard',
+    priority: 1
+  });
+  
+  // 2. Interactive (if has buttons/forms)
+  if (component.metadata.hasInteractions) {
+    stories.push({
+      name: 'Interactive',
+      type: 'interaction',
+      priority: 2
+    });
+  }
+  
+  // 3. States (if has state props)
+  if (component.metadata.hasStateVariations) {
+    // Choose most important state
+    if (hasEmptyState(component)) {
+      stories.push({
+        name: 'Empty',
+        type: 'state',
+        priority: 3
+      });
+    } else if (hasLoadingState(component)) {
+      stories.push({
+        name: 'Loading',
+        type: 'state',
+        priority: 3
+      });
+    }
+  }
+  
+  // 4. Data variants (if displays collections)
+  if (component.metadata.hasDataVariations) {
+    stories.push({
+      name: 'WithMultipleItems',
+      type: 'data',
+      priority: 4
+    });
+  }
+  
+  // 5. Disabled state (if component has disabled prop)
+  if (hasDisabledProp(component) && stories.length < 5) {
+    stories.push({
+      name: 'Disabled',
+      type: 'state',
+      priority: 5
+    });
+  }
+  
+  // Limit to 5 stories
+  return stories.slice(0, 5);
+}
+```
+
+---
+
+## Output Structure
+
+```typescript
+interface StoryVariant {
+  name: string;
+  type: 'standard' | 'interaction' | 'state' | 'data';
+  args: Record<string, any>;
+  playFunction?: string;
+  description?: string;
+}
+```
+
+---
+
+## Integration
+
+### Inputs from:
+- `component-analysis.mdc` → Component metadata, characteristics
+- `story-template-generation.mdc` → Base story structure
+- `type-safe-mocks.mdc` → Mock data variations
+- `interactive-stories.mdc` → Play function patterns
+
+### Outputs to:
+- Story file → Additional story variants
+- `error-handling-and-validation.mdc` → Validation of generated stories
+
+### Error Handling:
+- Too many possible stories → Limit to 5, prioritize by importance
+- Unclear component purpose → Generate Default only
+- No meaningful variants → Generate Default + Disabled (if applicable)
+
+---
+
+## Best Practices
+
+1. **Maximum 5 Stories**: Avoid overwhelming users
+2. **Distinct Purposes**: Each story tests different aspect
+3. **Meaningful Names**: Clear indication of what story demonstrates
+4. **Complete Args**: Each story should have all required props
+5. **Focused Testing**: One story = one concept
+6. **Avoid Redundancy**: Don't create similar stories
+7. **Use Controls**: Let users experiment rather than creating many variants
+8. **Document Purpose**: Add description for complex stories
+
+---
+
+## Example Story Set
+
+```typescript
+// Simple button component → 2 stories
+export const Default: Story = { ... };          // Standard usage
+export const Disabled: Story = { ... };         // Disabled state
+
+// Form component → 3 stories
+export const Default: Story = { ... };          // Standard form
+export const Interactive: Story = { ... };      // Demonstrate submission
+export const Disabled: Story = { ... };         // Disabled state
+
+// Data list component → 4 stories
+export const Default: Story = { ... };          // With typical data
+export const Empty: Story = { ... };            // No data state
+export const WithSingleItem: Story = { ... };   // Single item
+export const WithMultipleItems: Story = { ... };// Multiple items
+
+// Complex data grid → 5 stories (maximum)
+export const Default: Story = { ... };          // Standard grid
+export const Empty: Story = { ... };            // No data
+export const Loading: Story = { ... };          // Loading state
+export const Interactive: Story = { ... };      // Demonstrate sorting
+export const WithLargeDataset: Story = { ... }; // Many rows
+```
+
+---
+
+**Note**: This rule completes the story generation process. Focus on **demonstrating component usage**, not comprehensive testing. Stories should help developers understand "What does this component do?" and "How do I use it?"

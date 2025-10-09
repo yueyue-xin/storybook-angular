@@ -1,0 +1,492 @@
+---
+description: "Generate interactive stories with play functions and user interactions"
+globs: ["**/*.stories.ts"]
+alwaysApply: false
+---
+
+# Interactive Stories Rules
+
+## Purpose
+Generate interactive story variations with play functions that test user interactions, form inputs, button clicks, and component behavior using `@storybook/test` utilities.
+
+## Trigger
+- After `story-template-generation.mdc` creates base story
+- When component has interactive elements (buttons, forms, inputs)
+- When component has state changes or event handlers
+
+---
+
+## Play Function Basics
+
+### 1. Essential Imports
+
+```typescript
+import { userEvent, within, expect, waitFor } from '@storybook/test';
+```
+
+### 2. Basic Structure
+
+```typescript
+export const Interactive: Story = {
+  args: {
+    // Story args
+  },
+  play: async ({ canvasElement }) => {
+    // Get canvas context
+    const canvas = within(canvasElement);
+    
+    // Find elements
+    const button = canvasElement.querySelector('[data-test-id="submit"]');
+    
+    // Interact
+    if (button instanceof HTMLButtonElement) {
+      await userEvent.click(button);
+    }
+    
+    // Assert
+    await expect(button).toBeInTheDocument();
+  }
+};
+```
+
+---
+
+## Element Selection Strategies
+
+### Priority Order
+
+**1. data-test-id (Highest Priority)**
+```typescript
+const element = canvasElement.querySelector('[data-test-id="custom-id"]');
+```
+
+**2. Role-based (Semantic)**
+```typescript
+const button = canvas.getByRole('button', { name: /submit/i });
+const heading = canvas.getByRole('heading', { level: 1 });
+const input = canvas.getByRole('textbox', { name: /email/i });
+```
+
+**3. Label-based (Forms)**
+```typescript
+const input = canvas.getByLabelText(/username/i);
+const checkbox = canvas.getByLabelText(/agree to terms/i);
+```
+
+**4. Structural (Fallback)**
+```typescript
+const datagrid = canvasElement.querySelector('clr-datagrid');
+const rows = canvasElement.querySelectorAll('.datagrid-row');
+```
+
+**5. Never use text content for transloco**
+```typescript
+// ❌ Bad - breaks with language suffixes
+const button = canvas.getByText('Submit');  // Fails with 'Submit [EN]'
+
+// ✅ Good - structural or regex
+const button = canvasElement.querySelector('button[type="submit"]');
+await expect(button).toHaveTextContent(/^Submit/);  // Matches 'Submit [EN]'
+```
+
+---
+
+## Angular ng-reflect Attributes
+
+### Transformation Rules
+
+```typescript
+// Angular transforms component properties to ng-reflect-* attributes
+// Pattern: [componentPrefix + PropertyName] → ng-reflect-property-name
+
+// Example: Clarity DataGrid
+[clrDgSortBy="severity"]     → ng-reflect-sort-by="severity"
+[clrDgField]="'name'"        → ng-reflect-field="name"
+[clrDgRowSelection]="true"   → ng-reflect-row-selection="true"
+
+// Transformation steps:
+// 1. Remove component prefix (clrDg, mat, ng, etc.)
+// 2. Convert camelCase to kebab-case
+// 3. Add ng-reflect- prefix
+```
+
+### Usage Examples
+
+```typescript
+// ❌ Wrong - includes component prefix
+const columns = canvasElement.querySelectorAll('[ng-reflect-clr-dg-sort-by]');
+
+// ✅ Correct - prefix removed
+const columns = canvasElement.querySelectorAll('[ng-reflect-sort-by]');
+
+// ✅ With value
+const severityColumn = canvasElement.querySelector('[ng-reflect-sort-by="severity"]');
+
+// ✅ Find all sortable columns
+const sortableColumns = canvasElement.querySelectorAll('[ng-reflect-sort-by]');
+```
+
+---
+
+## UserEvent API
+
+### 1. Click Interactions
+
+```typescript
+// Simple click
+await userEvent.click(button);
+
+// Double click
+await userEvent.dblClick(element);
+
+// Right click
+await userEvent.pointer({ keys: '[MouseRight]', target: element });
+```
+
+### 2. Type/Input Interactions
+
+```typescript
+// Type into input
+const input = canvas.getByRole('textbox');
+await userEvent.type(input, 'test@example.com');
+
+// Clear and type
+await userEvent.clear(input);
+await userEvent.type(input, 'new value');
+
+// Upload file
+const fileInput = canvas.getByLabelText(/upload/i) as HTMLInputElement;
+const file = new File(['content'], 'test.txt', { type: 'text/plain' });
+await userEvent.upload(fileInput, file);
+```
+
+### 3. Select/Dropdown
+
+```typescript
+// Select by value
+const select = canvas.getByRole('combobox');
+await userEvent.selectOptions(select, 'option-value');
+
+// Select multiple
+await userEvent.selectOptions(select, ['value1', 'value2']);
+```
+
+### 4. Checkbox/Radio
+
+```typescript
+// Check checkbox
+const checkbox = canvas.getByRole('checkbox');
+await userEvent.click(checkbox);
+await expect(checkbox).toBeChecked();
+
+// Uncheck
+await userEvent.click(checkbox);
+await expect(checkbox).not.toBeChecked();
+```
+
+### 5. Keyboard Interactions
+
+```typescript
+// Tab navigation
+await userEvent.tab();
+await userEvent.tab({ shift: true });  // Shift+Tab
+
+// Keyboard shortcuts
+await userEvent.keyboard('{Control>}a{/Control}');  // Ctrl+A
+await userEvent.keyboard('{Enter}');
+await userEvent.keyboard('{Escape}');
+```
+
+---
+
+## Type Guards
+
+### Always Use Type Guards Before Interaction
+
+```typescript
+// ✅ Good - with type guard
+const input = canvas.getByLabelText(/email/i);
+if (input instanceof HTMLInputElement) {
+  await userEvent.type(input, 'test@example.com');
+  await expect(input).toHaveValue('test@example.com');
+}
+
+// ✅ Good - with state check
+if (input instanceof HTMLInputElement && !input.disabled) {
+  await userEvent.type(input, 'text');
+}
+
+// ❌ Bad - no type guard
+await userEvent.type(input, 'text');  // May fail if not HTMLInputElement
+```
+
+---
+
+## Async Operations
+
+### 1. Wait for Elements
+
+```typescript
+// Wait for element to appear
+await waitFor(
+  async () => {
+    const element = canvasElement.querySelector('[data-test-id="result"]');
+    await expect(element).toBeInTheDocument();
+  },
+  { timeout: 5000, interval: 100 }
+);
+```
+
+### 2. Wait for State Changes
+
+```typescript
+// Wait for loading to complete
+await waitFor(
+  async () => {
+    const loader = canvasElement.querySelector('[data-test-id="loader"]');
+    await expect(loader).not.toBeInTheDocument();
+  },
+  { timeout: 3000 }
+);
+```
+
+### 3. Debounced Actions
+
+```typescript
+// Component has debounced search
+const searchInput = canvas.getByRole('textbox', { name: /search/i });
+await userEvent.type(searchInput, 'query');
+
+// Wait for debounce
+await new Promise(resolve => setTimeout(resolve, 500));
+
+// Check results
+const results = canvasElement.querySelectorAll('.search-result');
+expect(results.length).toBeGreaterThan(0);
+```
+
+---
+
+## Common Interaction Patterns
+
+### 1. Form Submission
+
+```typescript
+export const FormSubmission: Story = {
+  args: {
+    onSubmit: action('onSubmit')
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Fill form fields
+    const nameInput = canvas.getByLabelText(/name/i);
+    if (nameInput instanceof HTMLInputElement) {
+      await userEvent.type(nameInput, 'John Doe');
+    }
+    
+    const emailInput = canvas.getByLabelText(/email/i);
+    if (emailInput instanceof HTMLInputElement) {
+      await userEvent.type(emailInput, 'john@example.com');
+    }
+    
+    // Submit form
+    const submitButton = canvas.getByRole('button', { name: /submit/i });
+    await userEvent.click(submitButton);
+    
+    // Action will be logged in Storybook actions panel
+  }
+};
+```
+
+### 2. Button Click
+
+```typescript
+export const ButtonClick: Story = {
+  args: {
+    onClick: action('onClick')
+  },
+  play: async ({ canvasElement }) => {
+    const button = canvasElement.querySelector('[data-test-id="action-button"]');
+    
+    if (button instanceof HTMLButtonElement) {
+      await userEvent.click(button);
+      // Action will be logged in Storybook actions panel
+    }
+  }
+};
+```
+
+### 3. Toggle/Switch
+
+```typescript
+export const ToggleInteraction: Story = {
+  args: {
+    onChange: action('onChange')
+  },
+  play: async ({ canvasElement }) => {
+    const toggle = canvasElement.querySelector('[data-test-id="toggle"]');
+    
+    if (toggle instanceof HTMLInputElement) {
+      // Initially unchecked
+      await expect(toggle).not.toBeChecked();
+      
+      // Click to check
+      await userEvent.click(toggle);
+      await expect(toggle).toBeChecked();
+      
+      // Click to uncheck
+      await userEvent.click(toggle);
+      await expect(toggle).not.toBeChecked();
+    }
+  }
+};
+```
+
+### 4. Search/Filter
+
+```typescript
+export const SearchFilter: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    
+    // Demonstrate search interaction
+    const searchInput = canvas.getByRole('textbox', { name: /search/i });
+    if (searchInput instanceof HTMLInputElement) {
+      await userEvent.type(searchInput, 'test');
+      
+      // Component handles filtering - just demonstrate the interaction
+      // Results will be visible in the rendered story
+    }
+  }
+};
+```
+
+### 5. DataGrid Interaction
+
+```typescript
+export const DataGridInteraction: Story = {
+  play: async ({ canvasElement }) => {
+    // Verify datagrid exists
+    const datagrid = canvasElement.querySelector('clr-datagrid') ||
+                     canvasElement.querySelector('[data-test-id="datagrid"]');
+    
+    if (datagrid) {
+      await expect(datagrid).toBeInTheDocument();
+      
+      // Verify has rows
+      const rows = datagrid.querySelectorAll('clr-dg-row, [role="row"]');
+      expect(rows.length).toBeGreaterThan(0);
+      
+      // Optional: Test clicking a sortable column (if exists)
+      const sortableColumn = datagrid.querySelector('[ng-reflect-sort-by]');
+      if (sortableColumn instanceof HTMLElement) {
+        await userEvent.click(sortableColumn);
+        // Component handles sorting internally - no need to verify details
+      }
+    }
+  }
+};
+```
+
+---
+
+## Error Handling in Play Functions
+
+### 1. Graceful Element Selection
+
+```typescript
+play: async ({ canvasElement }) => {
+  // Try preferred selector
+  let button = canvasElement.querySelector('[data-test-id="submit"]');
+  
+  if (!button) {
+    // Fallback selector
+    button = canvasElement.querySelector('button[type="submit"]');
+  }
+  
+  if (button instanceof HTMLButtonElement) {
+    await userEvent.click(button);
+  } else {
+    console.warn('⚠️ Submit button not found or wrong type');
+    // Don't throw - allow story to continue
+  }
+}
+```
+
+### 2. Try-Catch for Non-Critical Interactions
+
+```typescript
+play: async ({ canvasElement }) => {
+  try {
+    const optionalElement = canvasElement.querySelector('[data-test-id="optional"]');
+    if (optionalElement) {
+      await userEvent.click(optionalElement);
+    }
+  } catch (error) {
+    console.warn('⚠️ Optional interaction failed:', error);
+    // Don't rethrow - optional interaction
+  }
+  
+  // Critical interactions - let errors propagate
+  const criticalButton = canvasElement.querySelector('[data-test-id="critical"]');
+  await userEvent.click(criticalButton);  // Will throw if fails
+}
+```
+
+---
+
+## Best Practices
+
+1. **Prefer data-test-id**: Most reliable, doesn't break with content changes
+2. **Use Type Guards**: Always check element type before interaction
+3. **Async/Await**: All userEvent calls must be awaited
+4. **Meaningful Assertions**: Test behavior, not just existence
+5. **Realistic Interactions**: Simulate real user behavior
+6. **Flexible Selectors**: Have fallbacks for element selection
+7. **Wait for Changes**: Use `waitFor` for async state updates
+8. **Avoid Text Selectors**: Don't use `getByText` with transloco content
+9. **Document ng-reflect**: Comment transformation rules for Angular attributes
+10. **Graceful Failures**: Warn instead of throwing for optional elements
+
+---
+
+## Output Structure
+
+```typescript
+interface InteractiveStory {
+  name: string;
+  args: Record<string, any>;
+  playFunction: {
+    elementSelectors: string[];
+    interactions: {
+      type: 'click' | 'type' | 'select' | 'wait';
+      target: string;
+      value?: string;
+    }[];
+    assertions: string[];
+  };
+}
+```
+
+---
+
+## Integration
+
+### Inputs from:
+- `component-analysis.mdc` → Interactive elements detection
+- `story-template-generation.mdc` → Base story structure
+- `transloco-integration.mdc` → Avoid text-based selectors
+
+### Outputs to:
+- Story file → Enhanced with interactive stories
+- `error-handling-and-validation.mdc` → Element selection failures
+
+### Error Handling:
+- Element not found → Multi-level selector fallback
+- Interaction failed → Try-catch with warning
+- Async timeout → Warn and continue
+
+---
+
+**Note**: This rule adds interactive testing capabilities to stories. All interactions use realistic user events via `@storybook/test`.
